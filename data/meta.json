@@ -1,0 +1,41 @@
+{
+ "built": "2026-10-18T03:21:37+00:00",
+ "counts": {
+  "stars_total_in_hyg": 119625,
+  "stars_rendered": 41559,
+  "stars_searchable": 8940,
+  "dso": 13309,
+  "dso_with_distance": 10792,
+  "messier": 107,
+  "exoplanets": 5288
+ },
+ "sources": {
+  "hyg": {
+   "name": "HYG Database v4.1 (Hipparcos / Yale BSC / Gliese)",
+   "url": "https://github.com/astronexus/HYG-Database",
+   "license": "CC BY-SA 4.0",
+   "commit": "c7f7f883fe678cc7680169a50ccd7dcc49b060ce",
+   "commit_date": "2025-02-14T02:38:18+00:00"
+  },
+  "openngc": {
+   "name": "OpenNGC (NGC / IC 目錄，含梅西耶交叉編號)",
+   "url": "https://github.com/mattiaverga/OpenNGC",
+   "license": "CC BY-SA 4.0",
+   "commit": "4e2398a263de663d83f7b86be80c368c34335764",
+   "commit_date": "2026-10-10T17:54:12+02:00"
+  },
+  "oec": {
+   "name": "Open Exoplanet Catalogue (ASCII tables)",
+   "url": "https://github.com/OpenExoplanetCatalogue/oec_tables",
+   "license": "MIT（資料可自由使用，需註明）",
+   "commit": "bf1efad9e4bdc9f0887fe392b77308c3585e263f",
+   "commit_date": "2023-10-15T19:26:21+00:00"
+  }
+ },
+ "notes": [
+  "恆星：只收錄視星等 ≤ 8.0 或有專名者；位置為 J2000 赤道座標，距離來自 Hipparcos/Gaia 視差（HYG 未知距離者顯示未知）。",
+  "深空天體：OpenNGC 全部 NGC/IC（排除重複與不存在項目）；距離依序取「文獻值（手動整理）」、「視差」、「紅移（哈伯定律 H0=70 粗估）」，其餘顯示未知。",
+  "系外行星：Open Exoplanet Catalogue 2023-10 版「已確認」清單；僅有軌道與大小資料，外觀皆為推測。",
+  "未涵蓋：PGC/UGC 等更暗星系、Gaia 完整星表、星系團目錄、系外行星最新發現（NASA Exoplanet Archive 在建置環境無法連線）。"
+ ]
+}
