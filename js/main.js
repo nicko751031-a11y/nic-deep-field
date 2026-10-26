@@ -45,6 +45,22 @@ async function boot() {
   else { engine.setStars(new Float32Array(0)); report('恆星資料缺失：星空只剩背景星圖'); }
 
   const ui = new UI(); const controls = new Controls(engine, canvas); const audio = new SpaceAudio();
+  const musicButton = $('btn-music');
+  musicButton?.addEventListener('click', () => {
+    try {
+      if (audio.mode === 'arc') {
+        audio.stopAll();
+        musicButton.textContent = '♫';
+        musicButton.setAttribute('aria-pressed', 'false');
+        musicButton.title = '開啟 ARC 原創音樂';
+      } else {
+        audio.arc();
+        musicButton.textContent = '♪';
+        musicButton.setAttribute('aria-pressed', 'true');
+        musicButton.title = '關閉 ARC 原創音樂';
+      }
+    } catch (error) { ui.toast('音樂啟動失敗，請再點一次或檢查 Safari 音量'); }
+  });
   const observe = new ObservePanel($('observe'), engine, (iss) => { engine.earthMarker = iss; $('observe').classList.remove('open'); goToEarthMarker(iss); });
   const isTouch = controls.isTouchDevice();
   if (isTouch) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠', 7000), 6000); }
