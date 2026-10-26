@@ -58,3 +58,25 @@ test('系統把 context 暫停（iOS interrupted）：回到 off 並通知', asy
 });
 test('沒有 WebAudio：回報不支援', async () => { const a = new SpaceAudio({ AudioContextClass: null }); const r = await a.start('ambient'); assert.equal(r.ok, false); assert.equal(r.state, 'unsupported'); });
 test('整體沒有未處理的 Promise rejection', async () => { await new Promise((r) => setTimeout(r, 50)); assert.equal(unhandled, 0); });
+
+// --- GPT 稽核補充：resume 等待期間的取消／切換（直接呼叫 start()）
+const delayed = (ctx, ms) => () => new Promise((res) => setTimeout(() => { ctx.state = 'running'; res(); }, ms));
+test('resume 延遲時「播放→停止」最終 off、節點 0，逾時後不會突然播放', async () => {
+  const ctx = makeCtx(); ctx.resume = delayed(ctx, 300); const a = new SpaceAudio({ AudioContextClass: function () { return ctx; } });
+  const p = a.start('ambient'); await new Promise((r) => setTimeout(r, 50)); const r2 = await a.start('off');
+  const r1 = await p; await new Promise((r) => setTimeout(r, 400));
+  assert.equal(r2.ok, true); assert.equal(r1.ok, false); assert.equal(a.mode, 'off'); assert.equal(ctx.live, 0); assert.equal(a.nodes.length, 0);
+});
+test('resume 延遲時「ambient→organ」最後只播 organ', async () => {
+  const ctx = makeCtx(); ctx.resume = delayed(ctx, 300); const a = new SpaceAudio({ AudioContextClass: function () { return ctx; } });
+  const p1 = a.start('ambient'); await new Promise((r) => setTimeout(r, 50)); const p2 = a.start('organ');
+  const [r1, r2] = await Promise.all([p1, p2]);
+  assert.equal(r1.ok, false); assert.equal(r2.ok, true); assert.equal(a.mode, 'organ'); assert.ok(ctx.live > 10 && ctx.live <= 80);
+});
+test('resume 延遲時快速切換 20 次：最後一個獲勝、無多重音源', async () => {
+  const ctx = makeCtx(); ctx.resume = delayed(ctx, 200); const a = new SpaceAudio({ AudioContextClass: function () { return ctx; } });
+  const modes = ['ambient', 'organ', 'arc', 'sonify', 'off']; const ps = [];
+  for (let i = 0; i < 20; i++) { ps.push(a.start(modes[i % 5])); await new Promise((r) => setTimeout(r, 5)); }
+  const rs = await Promise.all(ps); await new Promise((r) => setTimeout(r, 300));
+  assert.equal(rs.filter((r) => r.ok).length >= 1, true); assert.equal(a.mode, 'off'); assert.equal(ctx.live, 0); assert.equal(a.nodes.length, 0);
+});

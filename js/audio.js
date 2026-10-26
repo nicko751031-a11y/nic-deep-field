@@ -29,9 +29,10 @@ export class SpaceAudio {
     try { this._ensure(); } catch (e) { return { ok: false, mode: 'off', state: 'unsupported', reason: e.message }; }
     const ctx = this.ctx; this.stopAll();
     if (ctx.state !== 'running') {
-      let reason = '';
-      try { await Promise.race([Promise.resolve(ctx.resume()), new Promise((_, rej) => setTimeout(() => rej(new Error('音訊啟動逾時（瀏覽器可能要求再點一次）')), 3000))]); }
+      let reason = ''; let timer = null;
+      try { await Promise.race([Promise.resolve(ctx.resume()), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('音訊啟動逾時（瀏覽器可能要求再點一次）')), 3000); })]); }
       catch (e) { reason = e?.message || '瀏覽器拒絕啟動音訊'; }
+      finally { if (timer) clearTimeout(timer); } // 成功／失敗／被取代都清掉計時器
       if (seq !== this.seq) return { ok: false, mode: this.mode, state: ctx.state, reason: '已被較新的操作取代' };
       if (ctx.state !== 'running') { this.stopAll(); return { ok: false, mode: 'off', state: ctx.state, reason: reason || `音訊狀態 ${ctx.state}，尚未啟動` }; }
     }

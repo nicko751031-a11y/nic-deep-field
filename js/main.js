@@ -61,9 +61,16 @@ async function boot() {
     if (r && !r.ok && r.reason !== '已被較新的操作取代') ui.toast(`音訊未啟動：${r.reason}。請再點一次，iPhone 請確認未開靜音切換鍵`, 6000);
   };
   audio.onState = syncAudioUI;
-  let audioBusy = false;
-  const startAudio = async (mode) => { if (audioBusy) return; audioBusy = true; try { const r = await audio.start(mode); syncAudioUI(r); return r; } finally { audioBusy = false; } };
-  musicButton?.addEventListener('click', () => { startAudio(audio.mode === 'off' ? 'ambient' : 'off'); });
+  // 最後操作優先：resume 等待期間再按停止或改選音景，直接交給 audio.start()（內部 seq 讓舊啟動作廢，不疊加節點）；
+  // 按鈕在等待期間顯示「啟動中」，點擊視為取消（off）
+  let audioPending = null;
+  const startAudio = async (mode) => {
+    audioPending = mode; if (musicButton) musicButton.title = mode === 'off' ? '停止中' : '音訊啟動中（再點一次取消）';
+    const r = await audio.start(mode);
+    if (audioPending === mode) audioPending = null;
+    syncAudioUI(r); return r;
+  };
+  musicButton?.addEventListener('click', () => { startAudio(audioPending && audioPending !== 'off' ? 'off' : audio.mode === 'off' ? 'ambient' : 'off'); });
   const observe = new ObservePanel($('observe'), engine, (iss) => { engine.earthMarker = iss; $('observe').classList.remove('open'); goToEarthMarker(iss); });
   const isTouch = controls.isTouchDevice();
   if (isTouch) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠', 7000), 6000); }

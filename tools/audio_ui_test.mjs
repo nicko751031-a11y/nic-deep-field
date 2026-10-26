@@ -15,7 +15,7 @@ await page.addInitScript(() => {
   window.__audioLive = 0; window.__audioPolicy = 'reject';
   class FakeCtx {
     constructor() { this.state = 'suspended'; this.sampleRate = 44100; this.currentTime = 0; this.destination = {}; window.__fakeCtx = this; }
-    resume() { if (window.__audioPolicy === 'reject') return Promise.reject(new DOMException('NotAllowedError', 'NotAllowedError')); if (window.__audioPolicy === 'hang') return new Promise(() => {}); this.state = 'running'; return Promise.resolve(); }
+    resume() { if (window.__audioPolicy === 'reject') return Promise.reject(new DOMException('NotAllowedError', 'NotAllowedError')); if (window.__audioPolicy === 'hang') return new Promise(() => {}); if (window.__audioPolicy === 'delay') return new Promise((res) => setTimeout(() => { this.state = 'running'; res(); }, 1200)); this.state = 'running'; return Promise.resolve(); }
     createGain() { return new N(); } createOscillator() { return new N(); } createBufferSource() { return new N(); } createBiquadFilter() { return new N(); } createDynamicsCompressor() { return new N(); }
     createBuffer(ch, len, sr) { return { getChannelData: () => new Float32Array(len), length: len, sampleRate: sr }; }
   }
@@ -44,6 +44,22 @@ s = await ui(); ok(s.pressed === 'false' && s.live === 0 && s.sel === 'off', `�
 await page.evaluate(() => { window.__fakeCtx.state = 'suspended'; });
 for (let i = 0; i < 20; i++) { await page.click('#btn-music'); await page.waitForTimeout(120); }
 await page.waitForTimeout(500); s = await ui(); ok(s.live <= 6, `連按 20 次後存活節點 ${s.live}（單一音景 ≤ 6）`);
+// 6) resume 延遲 1.2 秒：按播放後立刻再按（取消）→ 最終未播放、節點 0，逾時後不會突然播放
+await page.evaluate(() => { window.__audioPolicy = 'delay'; window.__fakeCtx.state = 'suspended'; });
+await page.click('#btn-music'); await page.waitForTimeout(200); await page.click('#btn-music'); await page.waitForTimeout(2000);
+s = await ui(); ok(s.pressed === 'false' && s.live === 0 && s.sel === 'off', `延遲 resume 時播放→取消 → 未播放、節點 ${s.live}`);
+// 7) resume 延遲時 ambient→設定改選 organ → 最後只播 organ（節點數為管風琴的 62，而非 ambient 的 4）
+await page.evaluate(() => { window.__fakeCtx.state = 'suspended'; });
+await page.click('#btn-music'); await page.waitForTimeout(200);
+await page.evaluate(() => { const i = document.getElementById('s-audio'); i.value = 'organ'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await page.waitForTimeout(2500);
+s = await ui(); const organNodes = s.live; ok(s.pressed === 'true' && s.sel === 'organ' && s.live > 10, `延遲 resume 時 ambient→organ → 只播 organ（節點 ${s.live}）`);
+// 8) 延遲 resume 下快速切換 20 次（按鈕／選單交錯）：最後一個操作獲勝、無多重音源
+await page.evaluate(() => { window.__fakeCtx.state = 'suspended'; });
+for (let i = 0; i < 20; i++) { if (i % 2) await page.click('#btn-music'); else await page.evaluate((m) => { const el = document.getElementById('s-audio'); el.value = m; el.dispatchEvent(new Event('change', { bubbles: true })); }, ['ambient', 'organ', 'arc', 'off'][(i / 2) % 4]); await page.waitForTimeout(60); }
+await page.waitForTimeout(2500); s = await ui();
+ok((s.pressed === 'true') === (s.live > 0) && s.live <= Math.max(organNodes, 70), `快速切換 20 次後狀態一致：pressed=${s.pressed}，節點 ${s.live}，選單 ${s.sel}`);
+await page.evaluate(() => { const i = document.getElementById('s-audio'); i.value = 'off'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await page.waitForTimeout(300);
+s = await ui(); ok(s.live === 0 && s.pressed === 'false', '最後靜音 → 節點 0');
 const real = errs.filter((e) => !/TUNNEL|Failed to load resource|favicon/.test(e)); ok(real.length === 0, `console／page 錯誤 0${real.length ? '：' + real.join(' | ') : ''}`);
 await browser.close();
 console.log(fails ? `\n${fails} 項失敗` : '\n全部通過');
