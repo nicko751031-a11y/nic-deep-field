@@ -48,16 +48,16 @@ async function boot() {
   const musicButton = $('btn-music');
   musicButton?.addEventListener('click', () => {
     try {
-      if (audio.mode === 'arc') {
+      if (audio.mode === 'ambient') {
         audio.stopAll();
         musicButton.textContent = '♫';
         musicButton.setAttribute('aria-pressed', 'false');
-        musicButton.title = '開啟 ARC 原創音樂';
+        musicButton.title = '開啟合成低頻音景';
       } else {
-        audio.arc();
+        audio.ambient();
         musicButton.textContent = '♪';
         musicButton.setAttribute('aria-pressed', 'true');
-        musicButton.title = '關閉 ARC 原創音樂';
+        musicButton.title = '關閉合成低頻音景';
       }
     } catch (error) { ui.toast('音樂啟動失敗，請再點一次或檢查 Safari 音量'); }
   });
