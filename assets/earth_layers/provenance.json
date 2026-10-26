@@ -1,0 +1,14 @@
+{
+  "classification": "資料重建驗證，非即時",
+  "terrain": "NOAA ETOPO2022 60角秒、EGM2008轉WGS84橢球高，高度1:1，海域顯示海面",
+  "texture": "NASA Blue Marble 2004-07真實來源裁切360×420，未上採樣或AI補細節",
+  "source_sha256": "dea8b4dc8a4f93f5f8bce0c8c85a508a178e7901e9ed8e6bf86e6ce7ef6d61e2",
+  "texture_sha256": "1a16d890a1032d47832427df136093fac9d09956508899aa97542be697c70ffc",
+  "bbox_wsen": [
+    118,
+    20,
+    124,
+    27
+  ],
+  "license": "NOAA ETOPO CC0-1.0；NASA Earth Observatory影像使用條件與Reto Stöckli署名"
+}

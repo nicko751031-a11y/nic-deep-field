@@ -10,6 +10,7 @@ import * as ASTRO from './astro.js';
 import { BODIES, BODY_BY_KEY } from './bodies.js';
 import * as SH from './shaders.js';
 import * as TX from './textures.js';
+import { EarthLod } from './earthlod.js';
 
 const V3 = THREE.Vector3;
 // 黃道 J2000 [x,y,z] → three 世界座標（x, z, -y）
@@ -27,9 +28,10 @@ export function bvToTemp(bv) { return 4600 * (1 / (0.92 * bv + 1.7) + 1 / (0.92 
 
 export class Engine {
   // post=false：安全模式，不經 EffectComposer（無 Bloom／電影後製），直接畫到畫布；maxPixelRatio：像素比上限（安全模式 1）
-  constructor(canvas, { quality = 'high', logDepth = true, post = true, maxPixelRatio } = {}) {
+  constructor(canvas, { quality = 'high', logDepth = true, post = true, maxPixelRatio, earthLod = true, tilesPath = 'assets/textures/earth_tiles' } = {}) {
     this.canvas = canvas;
     this.quality = quality;
+    this.opts = { earthLod, tilesPath };
     this.postOn = post;
     // 經後處理時場景畫在 composer 的暫存上，畫布本身的 MSAA 不會作用在場景，只浪費記憶體（iPad 容易觸發 context lost），改由 composer 暫存做 MSAA
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !post && quality !== 'low', logarithmicDepthBuffer: logDepth, powerPreference: 'high-performance' });
@@ -230,6 +232,8 @@ export class Engine {
       const sky = this.textures['assets/textures/tycho_skymap_2880.jpg'];
       if (sky) this.setSkyTexture(sky);
       this._buildSolarSystem();
+      // 地球分塊 LOD（靜態分塊金字塔；manifest 不存在時標示「未安裝」，維持 4K）
+      if (this.opts.earthLod !== false && this.bodies.get('earth')?.mesh.material.uniforms.uTile) this.earthLod = new EarthLod(this, this.opts.tilesPath || 'assets/textures/earth_tiles');
     });
   }
 
@@ -260,7 +264,9 @@ export class Engine {
         mat = new THREE.ShaderMaterial({
           vertexShader: SH.PLANET_VERT, fragmentShader: SH.EARTH_FRAG,
           uniforms: { ...common, uDay: { value: this.textures[T.day] }, uNight: { value: this.textures[T.night] }, uBRC: { value: this.textures[T.brc] }, uNormal: { value: this.textures[T.normal] },
-            uCloudShift: { value: 0 }, uNightBoost: { value: 1.0 }, uNormalStrength: { value: this.quality === 'high' ? 0.22 : 0.0 }, uAtmoColor: { value: new THREE.Color(...b.atmosphere.color) }, uHasRings: { value: 0 } },
+            uCloudShift: { value: 0 }, uCloudOpacity: { value: 1 }, uNightBoost: { value: 1.0 }, uNormalStrength: { value: this.quality === 'high' ? 0.22 : 0.0 }, uAtmoColor: { value: new THREE.Color(...b.atmosphere.color) }, uHasRings: { value: 0 },
+            uTile: { value: null }, uHasTile: { value: 0 }, uTileOff: { value: new THREE.Vector2() }, uTileScale: { value: new THREE.Vector2(1, 1) },
+            uWx: { value: null }, uWxBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uWxOn: { value: 0 } },
         });
         if (!this.textures[T.day]) mat = this._fallbackMat(b, common);
       } else if (T.kind === 'sun') {
@@ -542,6 +548,7 @@ export class Engine {
       const px = angR * pxPerRad;
       const showMesh = px > 0.8;
       e.group.visible = showMesh;
+      if (b.key === 'earth' && this.earthLod && showMesh) this.earthLod.update(e, rel, pxPerRad * pr);
       // 視星等（近似：H + 5 log10(r Δ) + 相位修正）
       let mag = 99;
       if (!showMesh) {

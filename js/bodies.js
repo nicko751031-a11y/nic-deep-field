@@ -45,7 +45,7 @@ export const BODIES = [
     textures: { kind: 'earth', src: 'observed',
       day: 'assets/textures/earth_day_4096.jpg', night: 'assets/textures/earth_night_4096.jpg',
       brc: 'assets/textures/earth_bump_roughness_clouds_4096.jpg', normal: 'assets/textures/earth_normal_2048.jpg',
-      note: '日間：NASA Blue Marble（MODIS 合成，4096×2048）；夜間城市燈光：NASA Black Marble（Suomi NPP VIIRS）；雲層：NASA Blue Marble 雲層合成（固定快照，非當前雲圖）。三者皆為多日／多月合成，不是即時影像。經 three.js 倉庫取得。' },
+      note: '日間：NASA Blue Marble；已安裝的高解析分塊為 BMNG 2004年7月歷史合成（最高16384×8192，依視野載入），缺塊回退4K，實際狀態見設定；夜間城市燈光：NASA Black Marble（Suomi NPP VIIRS）；雲層：NASA Blue Marble 雲層合成（固定快照，非當前雲圖）。三者皆為多日／多月合成，不是即時影像。經 three.js 倉庫取得。' },
     atmosphere: { color: [0.45, 0.65, 1.0], height: 100, density: 1.0 },
     facts: { 表面溫度: '平均 15 °C', 大氣: 'N₂ 78%、O₂ 21%', 衛星: '1（月球）', 海洋覆蓋: '71%' },
     H: -3.99,

@@ -6,6 +6,8 @@ import { Catalog } from './catalog.js';
 import { UI } from './ui.js';
 import { ObservePanel } from './observe.js';
 import { SpaceAudio } from './audio.js';
+import { EarthSurfaceView } from './earthview.js';
+import { EarthWeatherLayer } from './earthwx.js';
 import { C_KM_S, clamp } from './units.js';
 import { BODY_BY_KEY } from './bodies.js';
 
@@ -33,7 +35,8 @@ async function boot() {
   // 安全模式：關閉後處理（Bloom／電影後製）、對數深度與鏡頭呼吸，像素比 1；用來判斷黑屏閃爍是否來自這些功能
   const safe = params.has('safe');
   let engine;
-  try { engine = new Engine(canvas, { quality, logDepth: !params.has('nolog') && !safe, post: !safe, maxPixelRatio: safe ? 1 : undefined }); }
+  // ?nolod=1 關閉地球分塊 LOD；?tiles=<路徑> 指定分塊目錄（測試用，例如 assets/textures/earth_tiles_synthetic）
+  try { engine = new Engine(canvas, { quality, logDepth: !params.has('nolog') && !safe, post: !safe, maxPixelRatio: safe ? 1 : undefined, earthLod: !params.has('nolod'), tilesPath: /^[\w./-]+$/.test(params.get('tiles') || '') ? params.get('tiles') : undefined }); }
   catch (e) { lmsg.textContent = '無法建立 WebGL 環境。請改用支援 WebGL2 的瀏覽器（Chrome / Edge / Firefox / Safari 16+）。'; report(String(e.message || e)); return; }
 
   const catalog = new Catalog();
@@ -306,6 +309,7 @@ async function boot() {
     onExposure: (v) => { engine.exposureMode = v; },
     onLabels: (v) => { engine.showLabels = v; ui.labels.style.display = v ? '' : 'none'; },
     onVenus: (v) => engine.setVenusRadar(v),
+    onWx: (v) => { earthWx.setEnabled(v); if (v && engine.timeRate !== 1) ui.toast('近即時紅外線只在「時間＝即時」時顯示；請把時間倍率設回即時'); },
     onSens: (v) => { controls.sensitivity = 0.0022 * v; },
     onInvert: (v) => { controls.invertY = v; },
     onFov: (v) => { engine.camera.fov = v; engine.camera.updateProjectionMatrix(); },
@@ -313,10 +317,13 @@ async function boot() {
   });
 
 
+  const earthView = new EarthSurfaceView(engine, controls, ui);
+  const earthWx = new EarthWeatherLayer(engine, { onStatus: (s) => ui.setWeatherStatus(s) });
+
   // 測試鉤子（瀏覽器自動化用）
   if (params.has('diag')) import('./diag.js').then((m) => m.initDiag(engine, controls, { quality })).catch((e) => console.error('診斷模式載入失敗', e));
   window.__ndf = {
-    engine, controls, catalog, goTo,
+    engine, controls, catalog, goTo, earthView, earthWx,
     testPlaceOver(lat, lon, altKm) {
       const e = engine.bodies.get('earth'); if (!e?.axes) return false;
       const ax = { xb: e.axes.xb.toArray(), yb: e.axes.yb.toArray(), zb: e.axes.zb.toArray() };
@@ -346,6 +353,7 @@ async function boot() {
     const nearest = engine.update(dt);
     controls.update(dt, nearest);
     engine.render();
+    earthView.update(); earthWx.update();
     // 黑洞光線追蹤自適應步數：掉幀就減步數，流暢就逐步加回
     if (engine.frame.type === 'bh') {
       const u = engine.bhMat.uniforms.uSteps; const maxSteps = engine.bhMaxSteps || (engine.bhMaxSteps = u.value);

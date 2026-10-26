@@ -137,6 +137,21 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - 尚未驗證：iPhone Safari GPU、完整桌面與手機回歸、真實 FPS、音樂正常啟動；不得宣稱全部問題修復或品質滿分。
 
 
+## 地球分塊 LOD 管線（2026-10-27，Claude 工程；Issue #16）
+
+- **設計**：L0 = 既有 4096×2048；L1 = 8192（4×2 塊）；L2 = 16384（8×4 塊），每塊 2048² JPEG（避開 iOS Safari 約 16.7 MP 的單張解碼上限）。層級 > 0 時以該層的球面補丁（`SphereGeometry` 經緯度子區間，UV 改寫為全球 UV）取代本體；塊未載入／失敗時該補丁用 L0 全球圖，永遠不缺塊、不 z-fighting。雲層、夜燈、法線、粗糙度仍用 4K 全球圖與原 UV。
+- **選層**：星下點像素足跡 ＝ 高度 / 每弧度裝置像素；需要的貼圖寬度 W ≥ 2πR·pxPerRad / 高度；超過當前層 1.15 倍升層（連續 6 幀），明顯拉遠（< 0.6 倍）立即降層。低畫質最高 L1。
+- **載入**：只載入「補丁中心／四角／四邊中點在視錐內且面向相機」或「畫面中心與四角視線打到」的塊；同時請求 4；GPU 預算桌面 384 MB、手機 128 MB，超過時 LRU 釋放。manifest 缺失 → 「未安裝（沿用 4K）」。
+- **資產**：`tools/build_earth_tiles.py` 由 NASA 原圖產生各層與 `manifest.json`（來源 URL、月份、來源與每塊 SHA-256、尺寸、處理方式）。**本建置環境無法連 NASA，真實分塊尚未產生**；以下測試用 4K 放大的合成資料（`--synthetic`，manifest 標示 `synthetic_test`，目錄 `earth_tiles_synthetic/` 已列入 .gitignore，不提交），只驗證管線與正確性，不代表清晰度提升。
+- **無頭 Chromium 結果（`?tiles=assets/textures/earth_tiles_synthetic&quality=high`，1200×800）**：9,000 km 高度 L0；1,800 km → L2，視野內 1 塊、載入 1 塊（21 MB）；400 km → L2，1 塊；回到 30,000 km → 立即降回 L0，快取保留。135°E 塊邊界、0° 經度赤道、86°N 極區、45°S 皆無接縫、無黑塊；極區 8 塊可見時載入 14 塊共 300 MB（< 預算）。shader 錯誤 0、console 0。台灣位置與方向正確（無鏡像）。
+- **真實 NASA 分塊（run #2，`assets/earth-tiles-2004-07-40384466200`）**：GitHub Actions 執行器下載 `world.200407.3x21600x10800.jpg`（SHA-256 `dea8b4dc…`），產生 L0 4K 底圖＋L1 8 塊＋L2 32 塊，共 42 檔 18 MB。無頭 Chromium：台灣 1,800／500 km、日本 900 km、南美 1,800 km 皆 L2，載入 1–3 塊，`baseSwapped=true`，shader 錯誤 0；16K 與 4K 對照（`docs/screens/lod-4k-taiwan-500.jpg` vs `lod-16k-taiwan-500.jpg`）海岸線、山脈、都市明顯清晰，方向正確。發現並處理：原 4K 底圖（含海底地形版）與分塊（base-map 版）色調不同 → 工具同時輸出同來源 L0，引擎在 manifest 可用時換用，三層一致。
+- **未驗證**：iPhone Safari 的分塊解碼、記憶體與 FPS（請用 `?diag=1` 看「地球分塊」一行）；真實 GPU 的補丁邊界抗鋸齒；GPT 的視覺驗收（換用 L0 後遠景海洋色較深、無海底地形，屬來源差異）。
+
+### GPT 靜態稽核回應（2026-10-27，Issue #8）
+- **經度索引方向**：`tools/test_earthlod_index.mjs`（離線、不需 GPU）直接用 vendored three.js 驗證：`SphereGeometry` 的 `uv.x = u`、`phi = phiStart + u·phiLength`，完整球面 U = φ/2π（最大誤差 7e-9），**不是** 1 − φ/2π；補丁改寫後的全球 UV 與完整球面在同一頂點一致（4×2、8×4 共 4,624 個頂點，最大誤差 4.9e-8）；台灣 121°E → L2 x=6、東京 139.7°E → x=7、聖保羅 46.6°W → x=2、0°、±180° 接縫由視線命中反推皆與來源塊一致。17 項全部通過，與真實分塊截圖（台灣、海南、日本位置正確）一致，故未採用「反向索引」提案。
+- **手機記憶體硬上限**：原本可見塊 `lastUse=frame` 永不釋放，128 MB 確實只是軟上限。修正為兩道：(1) 本層可見塊 × 每塊 22.5 MB > 預算 → 立即降一層（極區 8 塊匯聚時 L2 → L1），並記住當時像素需求，需求變化 ±60% 才解除；(2) 已載入＋載入中＋本次 > 預算 → 停止載入，該補丁沿用 L0（不會缺塊），並先釋放不可見的塊。狀態多了 `capLevel／capEvents／overBudget`。
+- **壓力測試 `tools/lod_stress.mjs`**（無頭 Chromium，每 200 ms 取樣）：`quality=medium`（預算 122 MB）北極 88°N 1,200 km 需要 8 塊 → 自動降至 L1（需要 4、載入 5、107 MB）；南極、赤道 700 km 皆 ≤ 預算；台灣⇄30,000 km 來回 10 趟後仍回到 L2；343 次取樣峰值 107 MB、0 次超出；`quality=high`（366 MB）極區 L2 8 塊可見、最多 17 塊 364 MB、337 次取樣 0 次超出。兩組皆 WebGL context 未遺失、著色器錯誤 0、console 0。FPS 在 SwiftShader 下僅 1–3，無參考價值，需真機補測。
+
 ## 對數深度片段編譯錯誤修正與 GPU 診斷模式（2026-10-27，Claude QA）
 
 - **發現**：main `f2faced` 加入的 `<logdepthbuf_vertex>` 需要 `<common>` 片段裡的 `isPerspectiveMatrix()`，`PLANET_VERT`／`ATMO_VERT` 未包含 → 頂點著色器編譯失敗（`'isPerspectiveMatrix' : no matching overloaded function found`），所有行星與大氣不繪製；無頭 Chromium 開場畫面只剩星空與眩光。
@@ -164,3 +179,37 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - **診斷模式新增**：每秒掃描非有限值像素與平均亮度，統計「黑幀」（亮度掉到峰值 3% 以下）、context lost（引擎計數與降級次數）、像素比、後處理開關；報告 JSON 一併輸出。請在閃爍的裝置開 `?diag=1` 觀察 1 分鐘後按「產生／複製報告」。
 - **其他修正**：favicon／manifest／og 標籤；`prefers-reduced-motion` 預設關閉呼吸與電影後製；眩光 2D 畫布沒有內容時不重畫。
 - **回歸**：`tools/browser_test.mjs` 桌面＋Pixel 7 直橫向（結果見本次 PR 說明）；`?safe=1` 可正常載入並渲染。真機未測。
+
+
+## 真實 NASA 分塊／地表檢視驗證（40388839807）
+
+- 驗證紀錄：https://github.com/nicko751031-a11y/NIC/actions/runs/40388839807；瀏覽器：141.0.7390.37，Chromium + SwiftShader；不是 iPhone Safari 真機，不是硬體GPU效能測試。
+- 真實素材：2004-07 NASA 21600×10800，來源 SHA-256 `dea8b4dc8a4f93f5f8bce0c8c85a508a178e7901e9ed8e6bf86e6ce7ef6d61e2`；40張真實分塊＋L0，不使用合成放大測試圖。
+- 41項地形／氣象狀態測試、8項分塊記憶體測試通過。
+- 5個瀏覽器情境：桌面、手機直向、手機橫向、手機極區多分塊、刻意404分塊。近距離L2、拉遠L0、雲層開關、來源提示、分塊快取預算均通過；shader及非預期console錯誤0。
+- 新修正：計入尚在下載的貼圖預算；額度不夠保留4K；底圖替換後釋放舊圖；地表檢視同步所有LOD材質的雲層／雲影開關。
+- 證據：私有artifact內 `browser/*.png`、`browser/report.json`、`unit-tests.txt`、`budget-tests.txt`、`tile-verification.json`。各圖是本次候選版截圖，不是電腦生成的示意參考圖。
+- 未驗證：iPhone Safari真機FPS、發熱、音訊、全站完整回歸；不可把本節當作全部bug修復或正式部署證明。
+- 地形與近即時氣象保持未接入3D：NOAA正高轉橢球高、WMS吸附時段仍有未完成驗證；測試影像不可當即時發布。
+
+<!-- terrain-weather-preview -->
+## 台灣地形／氣象驗證結果
+
+環境：Chromium SwiftShader；裝置尺寸模擬，不是 iPhone 真機。
+
+- desktop：300842個三角形；衛星實際連線=ready；來源時間=2026-10-26T19:00:00Z；503失敗撤圖與按鈕不重疊通過。
+- phone-portrait：75600個三角形；衛星實際連線=ready；來源時間=2026-10-26T19:00:00Z；503失敗撤圖與按鈕不重疊通過。
+- phone-landscape：75600個三角形；衛星實際連線=ready；來源時間=2026-10-26T19:00:00Z；503失敗撤圖與按鈕不重疊通過。
+
+單元測試：61項，0失敗（高程資料缺測、1:1、基準轉換、時間過期與回應時段不符）。工作流程：https://github.com/nicko751031-a11y/NIC/actions/runs/40389793031
+
+尚未驗證：iPhone Safari實機GPU、發熱、長時間記憶體、全球地形接縫及主站整合。不能將尺寸模擬當作真機測試。來源停機時會安全失敗；測試紀錄不保證未來來源始終可用。
+<!-- /terrain-weather-preview -->
+
+## 地球整合部署（2026-10-27，Claude 工程；負責人指示「把地球全部署進去」）
+
+- **合併**：`claude/earth-tile-lod` ← main `40f24a1`（穩定性修正）← `chatgpt/arc-earth-layers-20261027` `e84dae8`（含 PR #23）。衝突：`earthlod.js` 以硬上限版為準並讓 `_load()` 也把關預算（GPT 的 8 項預算單元測試改為對本實作通過）；`shaders.js` 同時保留 `uCloudOpacity` 與 `safeColor`／`safeNormalize`；`diag.js`／`engine.js`／`main.js` 選項與欄位並存；`meta.json` 合併 `earth_tiles` 與 `earth_layers`。
+- **新增主站圖層**：`js/earthwx.js` 近即時紅外線（見 README）。`tools/wx_layer_test.mjs`（route 模擬 GIBS：capabilities XML＋512² PNG＋CORS／時間標頭）：啟用→ready、uWxOn=1、UV 範圍 118–124E／20–27N 正確、左下標示顯示來源時段與延遲、非有限值 0；時間加速→`unavailable` 撤圖顯示「—」；來源 503→`failed` 撤圖；關閉→隱藏；shader 錯誤 0、console 0。截圖 `docs/screens/wx-taiwan-1500.jpg`（夜側，固定測試影像，不是真實雲圖）。
+- **單元測試**：`test_earthlod_index` 17 項、`test_earthlod_budget` 8 項、`test_earthlayers`＋`test_earthterrain` 61 項全部通過。
+- **瀏覽器回歸**（無頭 Chromium）：結果見本節下方更新與 PR #19 留言。真機未測；正式站 GIBS 連線與 CORS 需真機確認。
+- **最終回歸（`254ec1a`＋測試調整）**：`nan_sweep` 11 場景非有限值 0、無黑幀；`lod_stress` medium／high 各 336／353 次取樣 0 次超出預算、context 未遺失；GPT `earth_layers_browser_test` 5 情境（桌面、手機直橫向、手機極區、刻意缺塊）通過——極區情境依設計因 128 MB 硬上限降到 L1（`capLevel=1`），測試改為接受 level ≥ 1；GPT `earth_terrain_browser_test` 3 情境通過（來源在建置環境連不到，注入失敗撤圖正常）；`browser_test` 桌面（台灣 1,800 km L2、載入 6 塊 129 MB、shader 錯誤 0）＋Pixel 7 直向（38 鈕、重疊 0、console 0）＋橫向（39 鈕、重疊 0、console 0）。

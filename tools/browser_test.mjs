@@ -56,6 +56,7 @@ if (!mobile) {
   await page.evaluate(() => { const e = window.__ndf.engine; e.simTime = Date.UTC(2026, 9, 17, 4, 0, 0); e.timeRate = 0; e.update(0); });
   await page.evaluate(() => window.__ndf.testPlaceOver(23.7, 121.0, 1800));
   await page.waitForTimeout(800); await shot('06-earth-over-taiwan-noon');
+  await page.waitForTimeout(4000); say(`earth LOD over Taiwan 1800 km: ${await page.evaluate(() => JSON.stringify(window.__ndf.engine.earthLod?.status() || null))}`);
   await page.evaluate(() => window.__ndf.testPlaceOver(23.7, 121.0, 2500));
   await page.waitForTimeout(800); await shot('06-earth-over-taiwan');
   await page.evaluate(() => window.__ndf.testPlaceOver(0, 20, 9000));

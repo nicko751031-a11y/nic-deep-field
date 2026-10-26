@@ -110,13 +110,17 @@ export const EARTH_FRAG = /* glsl */`
   varying vec3 vWorldPos; varying vec3 vNormal; varying vec2 vUv; varying vec3 vObjPos;
   varying vec3 vTangent; varying vec3 vBitangent;
   uniform sampler2D uDay, uNight, uBRC, uNormal;
+  uniform sampler2D uTile; uniform vec2 uTileOff, uTileScale; uniform float uHasTile; // 分塊 LOD：有塊時 day 改取塊貼圖（其餘圖層仍用全球 UV）
   uniform vec3 uSunDir; uniform float uSunIntensity;
+  uniform float uCloudOpacity; // 1=歷史雲層；0=地表檢視（非即時晴空）
   uniform float uCloudShift;   // 雲層相對地表的經度位移（弧度換算到 uv）
   uniform float uDetail;
   uniform float uNightBoost;
   uniform float uNormalStrength;
   uniform vec3 uAtmoColor;
   uniform float uHasRings; // 不用，保持介面一致
+  // 近即時紅外線雲圖（NASA GIBS Himawari Band 13，區域）：uWxBox = (u0, v0, u1, v1) 全球 UV 範圍；uWxOn=0 時完全不取樣
+  uniform sampler2D uWx; uniform vec4 uWxBox; uniform float uWxOn; uniform float uUOffset;
   float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   float noise3(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
@@ -129,11 +133,11 @@ export const EARTH_FRAG = /* glsl */`
     vec3 pn = normalize(vObjPos);
     vec3 nm = texture2D(uNormal, vUv).xyz * 2.0 - 1.0;
     vec3 nWorld = normalize(n + (safeNormalize(vTangent) * nm.x + safeNormalize(vBitangent) * nm.y) * uNormalStrength);
-    vec3 day = texture2D(uDay, vUv).rgb;
+    vec3 day = uHasTile > 0.5 ? texture2D(uTile, (vUv - uTileOff) * uTileScale).rgb : texture2D(uDay, vUv).rgb;
     vec3 brc = texture2D(uBRC, vUv).rgb;         // R 高度、G 粗糙度、B 雲
     vec3 night = texture2D(uNight, vUv).rgb;
     vec2 cuv = vec2(vUv.x + uCloudShift, vUv.y); // 交由 RepeatWrapping 處理接縫，避免 fract 導數不連續
-    float clouds = texture2D(uBRC, cuv).b;
+    float clouds = texture2D(uBRC, cuv).b * uCloudOpacity;
     float ocean = 1.0 - smoothstep(0.35, 0.7, brc.g); // 低粗糙度 = 水面
     if (uDetail > 0.0) {
       float d = noise3(pn * 1200.0) * 0.5 + noise3(pn * 5000.0) * 0.5;
@@ -149,7 +153,7 @@ export const EARTH_FRAG = /* glsl */`
     vec3 sunCol = vec3(1.0, 0.98, 0.95);
     // 雲影（沿太陽方向在 uv 上偏移取樣）
     vec2 shadowUv = cuv + vec2(-uSunDir.x, uSunDir.y) * 0.0025;
-    float cloudShadow = 1.0 - 0.45 * texture2D(uBRC, shadowUv).b;
+    float cloudShadow = 1.0 - 0.45 * texture2D(uBRC, shadowUv).b * uCloudOpacity;
     vec3 surf = day * diff * cloudShadow + sunCol * spec;
     // 雲層：有厚度感的 Lambert，晨昏線附近偏橘
     float cloudLit = max(ndl0, 0.0) * 0.95 + 0.05 * dayF;
@@ -157,9 +161,21 @@ export const EARTH_FRAG = /* glsl */`
     float tw = exp(-pow(ndl0 / 0.10, 2.0)) * 0.6;
     vec3 cloudCol = mix(vec3(1.0), twilight, tw) * cloudLit;
     vec3 col = mix(surf, cloudCol, clamp(clouds * 1.15, 0.0, 1.0));
+    // 近即時紅外線（10.3 µm）：GIBS 影像冷雲頂亮、地表暗；只在影像涵蓋範圍內疊加，透明＝缺測。
+    // 顯示為灰白雲層亮度（非真彩色、非雲高），夜側也可見（紅外線不靠日照）
+    float wx = 0.0;
+    if (uWxOn > 0.5) {
+      vec2 w = vec2((vUv.x - uUOffset - uWxBox.x) / (uWxBox.z - uWxBox.x), (vUv.y - uWxBox.y) / (uWxBox.w - uWxBox.y));
+      if (w.x >= 0.0 && w.x <= 1.0 && w.y >= 0.0 && w.y <= 1.0) {
+        vec4 ir = texture2D(uWx, w);
+        wx = clamp(ir.a * smoothstep(0.25, 0.85, dot(ir.rgb, vec3(0.333))), 0.0, 1.0);
+        vec3 irCol = mix(vec3(0.55, 0.6, 0.68), vec3(1.0), cloudLit) * (0.25 + 0.75 * max(cloudLit, 0.2)); // 夜側仍可辨識（紅外線不靠日照），但壓暗避免像白天
+        col = mix(col, irCol, wx * 0.9);
+      }
+    }
     // 夜間燈光（雲下減弱），晨昏線以外才顯現
     float nightF = 1.0 - smoothstep(-0.18, 0.0, ndl0);
-    vec3 lights = night * nightF * uNightBoost * (1.0 - clouds * 0.75);
+    vec3 lights = night * nightF * uNightBoost * (1.0 - max(clouds, wx) * 0.75);
     col += lights;
     // 大氣：邊緣散射（藍）與晨昏線附近的橘紅
     float mu = max(dot(n, v), 0.0);

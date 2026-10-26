@@ -136,6 +136,8 @@ export class UI {
       ${row('曝光', `<select id="s-exposure"><option value="auto">自動（靠近亮天體時星空變暗）</option><option value="stars">星空優先</option><option value="bodies">天體優先</option></select>`)}
       ${row('顯示天體標籤', `<input type="checkbox" id="s-labels" checked>`)}
       ${row('金星顯示 Magellan 雷達地形（非肉眼所見）', `<input type="checkbox" id="s-venus">`)}
+      ${row('地球近即時紅外線雲圖（台灣區域，Himawari Band 13）', `<input type="checkbox" id="s-wx">`)}
+      <div class="sub" id="s-wx-note">NASA GIBS／JMA Himawari AHI 10.3 µm 紅外線，非真彩色、非雲高；只在「時間＝即時」時顯示來源公布的產品時段（約每 10 分鐘），過期、來源失敗或時間加速即撤圖顯示「—」。狀態：未開啟。<br><a href="earth-layers.html">台灣地形與氣象驗證頁（獨立頁，NOAA ETOPO 2022 高程 1:1）</a></div>
       ${row('滑鼠靈敏度', `<input type="range" id="s-sens" min="0.5" max="3" step="0.1" value="1">`)}
       ${row('反轉上下', `<input type="checkbox" id="s-invert">`)}
       ${row('視野（FOV）', `<input type="range" id="s-fov" min="25" max="100" step="1" value="50">`)}
@@ -161,6 +163,7 @@ export class UI {
     $('s-exposure').addEventListener('change', (e) => opts.onExposure(e.target.value));
     $('s-labels').addEventListener('change', (e) => opts.onLabels(e.target.checked));
     $('s-venus').addEventListener('change', (e) => opts.onVenus(e.target.checked));
+    $('s-wx').addEventListener('change', (e) => opts.onWx?.(e.target.checked));
     $('s-sens').addEventListener('input', (e) => opts.onSens(parseFloat(e.target.value)));
     $('s-invert').addEventListener('change', (e) => opts.onInvert(e.target.checked));
     $('s-fov').addEventListener('input', (e) => opts.onFov(parseFloat(e.target.value)));
@@ -169,6 +172,13 @@ export class UI {
     $('s-breath').addEventListener('change', (e) => opts.onBreath(e.target.checked));
     $('s-autohide').addEventListener('change', (e) => opts.onAutohide(e.target.checked));
     $('s-audio').addEventListener('change', (e) => opts.onAudio(e.target.value));
+  }
+  // 近即時紅外線圖層狀態（設定面板與左下角標示）
+  setWeatherStatus(s) {
+    const note = $('s-wx-note'); if (note) { const a = note.querySelector('a'); note.innerHTML = `NASA GIBS／JMA Himawari AHI 10.3 µm 紅外線，非真彩色、非雲高；只在「時間＝即時」時顯示來源公布的產品時段（約每 10 分鐘），過期、來源失敗或時間加速即撤圖顯示「—」。狀態：${s.text}。<br>`; if (a) note.appendChild(a); }
+    let tag = $('wx-note'); if (!tag) { tag = document.createElement('div'); tag.id = 'wx-note'; tag.setAttribute('role', 'status'); document.body.appendChild(tag); }
+    tag.hidden = s.status === 'off';
+    tag.textContent = s.status === 'ready' ? `近即時紅外線 · ${s.slot.replace('T', ' ').replace('Z', ' UTC')} · 延遲約 ${s.ageMin} 分 · 非真彩色` : `近即時紅外線 · 時間：—${s.reason ? ' · ' + s.reason : ''}`;
   }
   fillCatalogInfo(catalog, engine) {
     const m = catalog.meta; const box = $('s-catalog'); if (!box) return;
@@ -188,6 +198,7 @@ export class UI {
     const tb = $('s-textures');
     tb.innerHTML = `<table>${BODIES.map((b) => `<tr><td>${b.zh}</td><td>${b.textures.src === 'observed' ? '<span class="badge badge-observed">實際觀測</span>' : '<span class="badge badge-procedural">程序模擬</span>'}${escapeHtml(b.textures.note)}</td></tr>`).join('')}
       <tr><td>全天背景</td><td><span class="badge badge-observed">實際觀測</span>NASA Tycho 星表全天圖（2880×1440，含銀河），經 NASA-3D-Resources 倉庫取得；另疊加 HYG 星表的星點。</td></tr>
+      <tr><td>地球分塊 LOD</td><td>${(() => { const s = engine.earthLod?.status(); if (!s) return '已關閉'; if (s.state === 'missing') return '未安裝高解析分塊（沿用 4K）'; if (s.state !== 'ready') return `無法讀取（${escapeHtml(engine.earthLod.error || s.state)}）`; return `${s.synthetic ? '<span class="badge badge-procedural">合成測試資料</span>' : '<span class="badge badge-observed">實際觀測</span>'}目前 L${s.level}（${s.size}px），已載入 ${s.loaded} 塊、失敗 ${s.failed}，${s.bytesMB} MB；最高 L${s.maxLevel}。${escapeHtml(engine.earthLod.manifest?.classification || '')}`; })()}</td></tr>
       <tr><td>載入狀態</td><td>${Object.entries(engine.textureStatus).map(([p, st]) => `${p.split('/').pop()}：${st === 'ok' ? '<span style="color:var(--ok)">成功</span>' : '<span style="color:var(--err)">失敗</span>'}`).join('<br>')}</td></tr></table>`;
   }
 }

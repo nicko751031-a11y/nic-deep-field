@@ -1,0 +1,48 @@
+{
+  "status": "sampled",
+  "classification": "NOAA ETOPO 2022 高程資料重建，非即時；60 角秒，不是 30m DEM",
+  "source_url": "https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/60s/60s_surface_elev_gtif/ETOPO_2022_v1_60s_N90W180_surface.tif",
+  "dataset_page": "https://www.ncei.noaa.gov/products/etopo-global-relief-model",
+  "source_resolution_arcsec": [
+    60.0,
+    60.0
+  ],
+  "crs": "EPSG:4326",
+  "source_crs_wkt": "COMPOUNDCRS[\"WGS 84 + EGM2008 height\",GEOGCRS[\"WGS 84\",DATUM[\"World Geodetic System 1984\",ELLIPSOID[\"WGS 84\",6378137,298.257223563,LENGTHUNIT[\"metre\",1]]],PRIMEM[\"Greenwich\",0,ANGLEUNIT[\"degree\",0.0174532925199433]],CS[ellipsoidal,2],AXIS[\"geodetic latitude (Lat)\",north,ORDER[1],ANGLEUNIT[\"degree\",0.0174532925199433]],AXIS[\"geodetic longitude (Lon)\",east,ORDER[2],ANGLEUNIT[\"degree\",0.0174532925199433]]],VERTCRS[\"EGM2008 height\",VDATUM[\"EGM2008 geoid\"],CS[vertical,1],AXIS[\"gravity-related height\",up,LENGTHUNIT[\"metre\",1]]],ID[\"EPSG\",9518]]",
+  "source_crs_epsg": 9518,
+  "transform": [
+    0.016666666666666666,
+    0.0,
+    118.0,
+    0.0,
+    -0.016666666666666666,
+    27.0
+  ],
+  "width": 360,
+  "height": 420,
+  "unit": "metres",
+  "encoding": "int16-little-endian",
+  "quantization": "原生網格四捨五入至 1 公尺，未上採樣",
+  "nodata": -32768,
+  "origin": "north-west",
+  "registration": "pixel-centre",
+  "height_datum": "source-orthometric-requires-geoid-conversion",
+  "render_height_exaggeration": 1,
+  "min_metres": -6663.0625,
+  "max_metres": 3525.289306640625,
+  "sha256": "14f22bd54c876ac881aa98dc6ec962bc96af7aa48128c775bff17de49b786764",
+  "source_tags": {
+    "TIFFTAG_IMAGEDESCRIPTION": "Topography-Bathymetry; EGM2008 height",
+    "TIFFTAG_DATETIME": "20220929123913",
+    "TIFFTAG_COPYRIGHT": "DOC/NOAA/NESDIS/NCEI > National Centers for Environmental Information, NESDIS, NOAA, U.S. Department of Commerce",
+    "NC_GLOBAL#node_offset": "1",
+    "tos#node_offset": "1",
+    "AREA_OR_POINT": "Area"
+  },
+  "license": "CC0-1.0；NOAA NCEI ETOPO 2022，非導航用途",
+  "geometry_enabled": false,
+  "limitation": "尚未轉換成橢球高、未完成海岸與 LOD 接縫測試，不啟用正式地形",
+  "file": "taiwan-etopo60s.i16",
+  "heightDatum": "EGM2008",
+  "sourceResolutionArcsec": 60
+}

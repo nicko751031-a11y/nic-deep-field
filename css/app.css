@@ -215,3 +215,14 @@ body.settings-open #hud .info { visibility: hidden; }
 #btn-music { position:fixed; z-index:31; top:calc(72px + var(--sat)); right:calc(16px + var(--sar)); display:flex; align-items:center; justify-content:center; pointer-events:auto; }
 #btn-music:focus-visible { outline:2px solid #d8f0ff; outline-offset:3px; }
 @media(max-width:760px){ #btn-music { top:calc(70px + var(--sat)); right:calc(14px + var(--sar)); } }
+
+/* 地表檢視標示：不影響飛行手勢，也不把隱藏歷史雲圖稱作當下晴空。 */
+#earth-layer-note { position:fixed; left:calc(14px + var(--sal)); bottom:calc(14px + var(--sab)); z-index:26; max-width:calc(100vw - 110px); padding:5px 9px; border-radius:6px; color:#e3edf6; background:rgba(0,0,0,.65); font-size:11px; line-height:1.5; pointer-events:none; }
+#earth-layer-note[hidden] { display:none; }
+#earth-layer-note.with-hud { bottom:calc(180px + var(--sab)); }
+.earth-view-setting input { min-width:24px; min-height:24px; }
+
+/* 近即時紅外線圖層狀態（左下，位於地表檢視提示之上；不影響手勢） */
+#wx-note { position:fixed; left:calc(14px + var(--sal)); bottom:calc(44px + var(--sab)); z-index:26; max-width:calc(100vw - 110px); padding:5px 9px; border-radius:6px; color:#dce9f5; background:rgba(0,0,0,.65); font-size:11px; line-height:1.5; pointer-events:none; }
+#wx-note[hidden] { display:none; }
+body:not(.idle) #hud:not(.hidden) ~ #wx-note { bottom:calc(210px + var(--sab)); }

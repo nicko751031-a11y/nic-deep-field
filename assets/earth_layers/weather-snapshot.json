@@ -1,0 +1,31 @@
+{
+  "status": "fresh-at-audit",
+  "layer": "Himawari_AHI_Band13_Clean_Infrared",
+  "title": "Clean Infrared (10.3 µm, Band 13, AHI, Himawari)",
+  "classification": "10.3 微米紅外線氣象觀測，非肉眼真彩色、非三維雲高",
+  "product_slot_utc": "2026-10-26T19:00:00Z",
+  "observation_instant_utc": null,
+  "time_note": "產品時段來自 capabilities；不等同每個像素精確曝光時刻。此檔僅為驗證快照，不得標示即時。",
+  "age_seconds_at_audit": 2890.287927,
+  "coverage_fraction": 1.0,
+  "bbox_wsen": [
+    118,
+    20,
+    124,
+    27
+  ],
+  "source_url": "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=Himawari_AHI_Band13_Clean_Infrared&STYLES=&SRS=EPSG%3A4326&BBOX=118%2C20%2C124%2C27&WIDTH=768&HEIGHT=896&FORMAT=image%2Fpng&TRANSPARENT=TRUE&TIME=2026-10-26T19%3A00%3A00Z",
+  "sha256": "6f9e915d16e1e1a0d447abe362796175bc033c5d61085b35c1f0fae79f572eab",
+  "capabilities_sha256": "e6db3ee7826046b4fcbfb0ba9a7c16a4e4b5b19d360349c53e14c7e298619fa0",
+  "capabilities_cors": "*",
+  "image_cors": "*",
+  "expose_headers": null,
+  "response_time_headers": {
+    "date": "Mon, 26 Oct 2026 19:48:10 GMT"
+  },
+  "live_texture_safe": false,
+  "limitation": "WMS nearestValue 可能吸附到其他時段；正式串流需補實際來源時間驗證及瀏覽器 CORS 測試",
+  "displayMode": "archive-test-snapshot",
+  "isNearRealtime": false,
+  "warning": "歷史驗證快照；WMS 實際對應時段未獨立驗證，不能標示即時或自動回退至此圖"
+}

@@ -28,9 +28,14 @@
 
 | 項目 | 性質 | 說明 |
 |---|---|---|
+| 地球高解析分塊（BMNG 2004-07） | 歷史觀測拼接 | NASA 21600×10800 原圖重新取樣為 4K／8K／16K，40 張 2048² 分塊；不是即時、不是 500m 原生分塊，也不是高程網格 |
+| 地表檢視（隱藏歷史雲層） | 人工顯示設定 | 只為查看地表細節；不代表當下晴空；畫面持續標示非即時晴空 |
+| 地球近即時紅外線雲圖（主站，設定開啟，台灣區域） | 實際觀測影像 | NASA GIBS／JMA Himawari AHI Band 13（10.3 µm）；顯示來源公布的產品時段（約每 10 分鐘，延遲數十分鐘），非真彩色、非雲高；只在「時間＝即時」時顯示，過期／失敗／加速即撤圖顯示「—」，不用舊圖冒充 |
+| 台灣地形驗證頁（`earth-layers.html`，獨立頁） | 資料重建 | NOAA ETOPO 2022 60 角秒高程（約 1.8 km 一格，不是 30 m）、高度 1:1、EGM2008→WGS84；主站 100 km 以上高度地形為次像素，未在主站做球面位移 |
 | 行星位置、月球位置 | 資料推算 | JPL 近似軌道根數（Standish）、Astronomical Almanac 月球低精度公式；精度角分等級 |
 | 自轉軸與自轉相位 | 資料推算 | IAU 2009/2015 自轉模型；地球相位等同格林威治恆星時（已驗證台北日夜與台灣方位）；其他行星貼圖的本初子午線對齊未逐一驗證 |
 | 地球、月球、火星、木星、土星、海王星、冥王星貼圖 | 實際觀測影像拼接 | NASA Blue Marble／Black Marble、NASA/JPL 全球圖、New Horizons 全球圖；皆為歷史合成，不是當下樣貌；地球雲層為固定快照 |
+| 地球近距離分塊（8K／16K） | 實際觀測影像拼接 | NASA Blue Marble Next Generation 2004-07，多日合成；近距離只是解析度提高，不是當下影像，也沒有立體地形 |
 | 水星、天王星表面、金星可見光雲層、太陽表面 | 程序模擬 | 建置環境無法取得 MESSENGER 全球圖；天王星幾乎無特徵；金星以厚雲為主（另可切換 Magellan 雷達圖並標示非肉眼所見） |
 | 土星環、天王星環 | 程序重建 | 依已知環帶半徑（C/B/卡西尼縫/A/恩克縫/F）生成，環內細節非影像 |
 | 恆星背景 | 實際觀測 | HYG v4.1 星表的真實位置與亮度（4.2 萬顆星點）＋ NASA Tycho 全天圖（含銀河） |
@@ -68,6 +73,19 @@
 
 重新產生資料：`python3 -I tools/build_data.py --hyg <HYG倉庫> --ngc <OpenNGC倉庫> --oec <oec_tables倉庫> --out data`。
 
+## 地球高解析分塊（LOD）
+
+- `assets/textures/earth_tiles/`：NASA Blue Marble Next Generation **2004 年 7 月**全球圖（21600×10800，NASA 公眾領域，請註明 NASA Earth Observatory）切成 2048² 分塊：L0 同來源 4K 底圖、L1 8K（8 塊）、L2 16K（32 塊），共 42 檔約 18 MB；`manifest.json` 記錄來源 URL、SHA-256 與處理方式。由 GitHub Actions 工作流程 `arc-earth-tiles` 以 `tools/build_earth_tiles.py` 產生（執行器可連 NASA）。
+- 引擎依高度自動切層（約 1,800 km 以下用 16K），只載入視野內的塊，失敗沿用 4K；GPU 記憶體硬上限桌面 384 MB、手機 128 MB：可見塊超出預算即降一層，載入中超出即停止並沿用 4K，不可見的塊依 LRU 釋放。設定面板與 `?diag=1` 顯示層級與塊數。分塊仍屬 NASA 歷史合成影像，不是即時，也不含真實立體地形；雲層、夜燈、法線仍為 4K 全球圖。
+- 重新產生：在 GitHub Actions 手動執行 `arc-earth-tiles`（可選月份），或本機 `python3 -I tools/build_earth_tiles.py <原圖> --source-url <NASA 下載網址> --month 2004-07 --out assets/textures/earth_tiles`。
+
+## 地球近即時紅外線雲圖（主站圖層，`js/earthwx.js`）
+
+- 設定 →「地球近即時紅外線雲圖」開啟後，瀏覽器直接向 NASA GIBS 讀取 WMTS capabilities 取得來源公布的最新時段，再抓該時段的 Himawari AHI Band 13 分塊（台灣區域 118–124°E、20–27°N），核對回應標頭 `Layer-Time-Actual` 與請求時段一致、影像非全透明後，才以 `uWx` 貼圖疊在地球（`EARTH_FRAG`，只在範圍內取樣；分塊補丁同步同一貼圖）。
+- 規則沿用 `js/earthlayers.js`：模擬時間必須等於現在（±60 秒）且倍率＝即時；來源時段超過 90 分鐘未更新即撤圖；頁面在前景時每 10 分鐘更新一次；任何失敗（CORS、停機、尺寸不符、全透明）撤圖並在左下與設定面板顯示「時間：—」與原因。
+- 顯示為灰白雲層亮度：冷雲頂亮、地表暗，夜側亦可見（紅外線不靠日照）；**不是真彩色、不是三維雲高、不是即時影片**；顯示的時間是產品時段，不是逐像素曝光時刻。
+- 建置環境連不到 GIBS，瀏覽器測試以 route 模擬來源（`tools/wx_layer_test.mjs`）；正式站的實際連線與 CORS 以 GPT 的 Actions 探測（`access-control-allow-origin: *`）為準，仍需真機確認。
+
 ## 貼圖與程式庫來源
 
 - 地球日間／夜間／雲層／法線：NASA Blue Marble、Black Marble（經 [three.js 倉庫](https://github.com/mrdoob/three.js) `examples/textures/planets/` 取得，MIT 授權的倉庫，影像為 NASA 公眾領域）
@@ -100,3 +118,33 @@
 ### 預設音景（2026-10-27）
 
 ARC 預設選曲為「合成低頻音景」（WebAudio 本地合成，不是錄音），不再以 ARC 和聲配樂作為快捷播放內容。為遵守 iPhone Safari 的使用者手勢限制，頁面載入時仍保持靜音；使用者點擊常駐 ♫ 按鈕才開始播放。設定仍可選擇其他音景或關閉。
+
+
+## 地表分層候選版操作
+
+設定 →「顯示歷史雲層」預設開啟；關閉後可檢查 NASA 地表分塊細節，畫面會持續標示「非即時晴空」。拉遠沿用4K，靠近按畫面像素需求載入8K／16K。缺塊或記憶體額度不足時保留4K，不生成假地形、不穿透黑洞。
+
+來源：NASA Earth Observatory / Reto Stöckli，Blue Marble Next Generation 2004-07。原圖與每塊 SHA-256 在 `assets/textures/earth_tiles/manifest.json`，其他來源狀態在 `data/meta.json` 的 `earth_layers`。來源：https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/ 。NASA 使用規範：https://www.nasa.gov/nasa-brand-center/images-and-media/ 。海洋底色、去雲與月合成屬原資料處理限制。
+
+2048²是本專案的保守分塊選擇，不代表所有iOS都有固定相同的圖片解碼上限。128／384MB僅是高解析分塊快取估算預算，不是整個網站GPU／RAM佔用；還有底圖、雲圖、夜燈與渲染緩衝。實機仍須測試。
+
+地形與近即時氣象原型、失敗撤圖規則及未完成項目詳見 `docs/EARTH_LAYERS.md`。維持原有100km觀測邊界、km／JD座標與全部真實性標示。
+
+<!-- terrain-weather-preview -->
+## 台灣地形與近即時氣象驗證（獨立測試頁）
+
+入口 `earth-layers.html`。此頁不取代第一人稱宇宙主站，不表示全球地形已完成。高程只涵蓋118–124°E、20–27°N，保留100公里觀測高度限制，沒有太空船或駕駛艙。
+
+### 真實與模擬的界線（新增圖層）
+| 圖層 | 性質 | 限制 |
+|---|---|---|
+| 地表 | NASA Blue Marble 2004-07歷史合成，原21K圖裁切360×420 | 原生約2km；未上採樣，非即時 |
+| 地形 | NOAA ETOPO2022 60角秒資料重建，高度1:1 | 不是30m DEM；用EGM2008大地水準面轉WGS84橢球高；海域顯示海面 |
+| 照明 | 固定展示照明 | 不冒充當下太陽方位或真實攝影 |
+| 近即時氣象 | NASA GIBS／JMA Himawari AHI Band13，10.3微米紅外線 | 非真彩色，非雲高；每10分鐘檢查，超過90分鐘或來源錯誤撤圖 |
+| 驗證快照 | 明示歷史的WMS對位快照 | 實際回傳時段未獨立核對，禁止當近即時備援 |
+
+近即時圖層直接向NASA讀取；不用代理、CDN、金鑰或服務端快取。只接受來源公布時段與回應 `Layer-Time-Actual` 一致、影像有效的產品。載入或更新失敗顯示「—」，不沿用舊圖。切回地表是使用者主動操作，不是背景偷偷回退。
+
+來源：NOAA NCEI ETOPO2022（https://www.ncei.noaa.gov/products/etopo-global-relief-model，DOI10.25921/fd45-gt74，CC0-1.0）；NASA Earth Observatory／Reto Stöckli Blue Marble；NASA GIBS／JMA Himawari。JMA使用條件：https://www.jma.go.jp/jma/en/copyright.html 。來源裁切與3D重建由ARC處理，不表示供應者背書；不作導航、氣象預報或警報服務。
+<!-- /terrain-weather-preview -->
