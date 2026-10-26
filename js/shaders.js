@@ -114,7 +114,7 @@ export const EARTH_FRAG = /* glsl */`
     vec3 day = texture2D(uDay, vUv).rgb;
     vec3 brc = texture2D(uBRC, vUv).rgb;         // R 高度、G 粗糙度、B 雲
     vec3 night = texture2D(uNight, vUv).rgb;
-    vec2 cuv = vec2(fract(vUv.x + uCloudShift), vUv.y);
+    vec2 cuv = vec2(vUv.x + uCloudShift, vUv.y); // 交由 RepeatWrapping 處理接縫，避免 fract 導數不連續
     float clouds = texture2D(uBRC, cuv).b;
     float ocean = 1.0 - smoothstep(0.35, 0.7, brc.g); // 低粗糙度 = 水面
     if (uDetail > 0.0) {
@@ -360,13 +360,14 @@ export const BH_FRAG = /* glsl */`
     if (r < uDiskInner || r > uDiskOuter) return vec4(0.0);
     float phi = atan(p.z, p.x);
     float t = (r - uDiskInner) / (uDiskOuter - uDiskInner);
-    // 克卜勒角速度 ∝ r^-1.5；內側轉得快，形成拉絲紋理
+    // 克卜勒角速度 ∝ r^-1.5；內側轉得快，形成細密的拉絲紋理（薄盤、絲狀，而非塊狀）
     float ang = phi - uTime * 0.6 * pow(r, -1.5) * 8.0;
-    float n = noise2(vec2(ang * 3.0, r * 2.5)) * 0.6 + noise2(vec2(ang * 9.0, r * 7.0)) * 0.4;
-    float ringy = 0.8 + 0.2 * sin(r * 6.0 + n * 3.0);
-    float emis = pow(1.0 - t, 1.6) * (0.55 + 0.7 * n) * ringy;
-    vec3 hot = vec3(1.0, 0.95, 0.9), warm = vec3(1.0, 0.55, 0.2);
-    vec3 col = mix(hot, warm, pow(t, 0.6));
+    float n = noise2(vec2(ang * 2.0, r * 14.0)) * 0.5 + noise2(vec2(ang * 6.0, r * 40.0)) * 0.3 + noise2(vec2(ang * 18.0, r * 90.0)) * 0.2;
+    float fil = 0.85 + 0.15 * sin(r * 22.0 + n * 9.0);         // 細環絲（以雜訊打散，避免規則同心環）
+    float emis = pow(1.0 - t, 1.5) * (0.45 + 0.7 * n) * fil;
+    // 配色：內緣白熱、中段淡金、外緣暖橘（藝術化；實際盤溫度決定光譜，此處僅示意）
+    vec3 hot = vec3(1.0, 0.97, 0.92), gold = vec3(1.0, 0.86, 0.62), warm = vec3(0.95, 0.58, 0.28);
+    vec3 col = t < 0.45 ? mix(hot, gold, t / 0.45) : mix(gold, warm, (t - 0.45) / 0.55);
     // 都卜勒射束：盤面速度 β = sqrt(rs/(2 r))（圓軌道，rs=1 → β = sqrt(0.5/r)），觀察者方向為 -rayDir
     float beta = sqrt(0.5 / r);
     vec3 vel = normalize(cross(uDiskNormal, p)) * beta;
@@ -374,11 +375,11 @@ export const BH_FRAG = /* glsl */`
     float gDop = 1.0 / (gamma * (1.0 - dot(vel, -rayDir)));
     float gGrav = sqrt(max(1.0 - 1.0 / r, 0.0));
     float g = gDop * gGrav;
-    float boost = pow(g, 3.0);
-    col = mix(col, vec3(0.6, 0.75, 1.0), clamp((g - 1.0) * 1.5, 0.0, 0.5));
-    col = mix(col, vec3(1.0, 0.35, 0.15), clamp((1.0 - g) * 1.5, 0.0, 0.5));
-    float alpha = clamp(emis * 1.4, 0.0, 1.0) * smoothstep(0.0, 0.08, t) * smoothstep(0.0, 0.15, 1.0 - t);
-    return vec4(col * emis * boost * 2.2, alpha);
+    float boost = pow(g, 2.5);                                   // 亮度不對稱（接近側亮）
+    col = mix(col, vec3(0.8, 0.88, 1.0), clamp((g - 1.0) * 0.8, 0.0, 0.25));
+    col = mix(col, vec3(1.0, 0.45, 0.2), clamp((1.0 - g) * 0.8, 0.0, 0.3));
+    float alpha = clamp(emis * 1.5, 0.0, 1.0) * smoothstep(0.0, 0.05, t) * smoothstep(0.0, 0.25, 1.0 - t);
+    return vec4(col * emis * min(boost, 3.0) * 1.35, alpha);
   }
   void main() {
     vec3 ro = uCamPos;
@@ -433,5 +434,40 @@ export const BH_FRAG = /* glsl */`
       col += skyColor(outDir) * trans;
     }
     gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+// 電影式後處理（在色調映射之後、顯示空間）：徑向色差、輕微調色、暗角、動態底片顆粒
+export const CINE_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+`;
+export const CINE_FRAG = /* glsl */`
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D tDiffuse;
+  uniform float uTime, uGrain, uVignette, uAberration, uGrade;
+  uniform vec2 uRes;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main() {
+    vec2 uv = vUv; vec2 c = uv - 0.5; float r2 = dot(c, c);
+    vec2 off = c * r2 * uAberration;
+    vec3 col;
+    col.r = texture2D(tDiffuse, uv + off).r;
+    col.g = texture2D(tDiffuse, uv).g;
+    col.b = texture2D(tDiffuse, uv - off).b;
+    float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    // 調色：略去飽和、柔和 S 曲線、暗部偏冷亮部偏暖
+    col = mix(col, vec3(l), 0.10 * uGrade);
+    col = mix(col, col * col * (3.0 - 2.0 * col), 0.30 * uGrade);
+    vec3 tint = mix(vec3(0.94, 0.97, 1.06), vec3(1.04, 1.0, 0.95), smoothstep(0.0, 0.75, l));
+    col *= mix(vec3(1.0), tint, uGrade);
+    // 暗角
+    col *= 1.0 - uVignette * smoothstep(0.12, 0.55, r2);
+    // 顆粒（暗部較明顯）
+    vec2 gp = mod(floor(gl_FragCoord.xy) + floor(fract(uTime * 7.31) * 977.0) * vec2(13.0, 7.0), 2048.0);
+    float g = hash(gp) - 0.5;
+    col += g * uGrain * (1.0 - l * 0.75);
+    gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
 `;
