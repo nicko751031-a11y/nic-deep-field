@@ -162,3 +162,24 @@ a { color: var(--accent); }
   .info { max-height: 100%; }
   .status { font-size: 11px; }
 }
+
+/* 電影沉浸模式：純視覺呈現，不改變觀測、推算與模擬的資料標示。 */
+body.cinematic #hud { --panel: rgba(3, 7, 14, .43); --panel-2: rgba(5, 9, 18, .92); --line: rgba(175, 196, 220, .12); --fg: #f2f4f7; --muted: #aab4c0; --accent: #cbd9e9; }
+body.cinematic .brand { background: transparent; border-color: transparent; padding-left: 12px; text-shadow: 0 2px 14px #000; }
+body.cinematic .brand b { font-size: 12px; font-weight: 500; letter-spacing: .24em; }
+body.cinematic .brand small { opacity: .75; letter-spacing: .09em; }
+body.cinematic .panel, body.cinematic .status, body.cinematic .controls .grp { box-shadow: 0 10px 48px rgba(0,0,0,.18); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+body.cinematic .dest { opacity: .42; transition: opacity .35s; }
+body.cinematic .dest:hover, body.cinematic .dest:focus-within { opacity: 1; }
+body.cinematic .info { background: linear-gradient(135deg,rgba(5,9,17,.7),rgba(5,9,17,.35)); }
+body.cinematic .topright button { border-radius: 50%; background: rgba(0,0,0,.25); }
+body.cinematic .topright button:hover, body.cinematic .topright button:focus-visible { background: rgba(35,49,66,.85); }
+body.cinematic #btn-cinema { border-color: rgba(215,225,235,.5); }
+body.cinematic .lbl { font-size: 10px; letter-spacing: .09em; color: rgba(238,242,247,.85); text-shadow: 0 2px 12px #000,0 0 4px #000; }
+body.cinematic .bottom { opacity: .35; transition: opacity .35s; }
+body.cinematic .bottom:hover, body.cinematic .bottom:focus-within { opacity: 1; }
+body.cinematic .search input { background: rgba(2,5,12,.38); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+body.cinematic #loading { background: radial-gradient(ellipse at 50% 45%,#111a29 0%,#020409 55%,#000 100%); }
+body.cinematic #loading h1 { font-weight: 200; letter-spacing: .42em; }
+@media (pointer:coarse) { body.cinematic .dest,body.cinematic .bottom { opacity: 1; } body.cinematic .brand small { font-size: 10px; } }
+@media (prefers-reduced-motion:reduce) { body.cinematic .dest,body.cinematic .bottom { transition:none; } }
