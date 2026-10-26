@@ -16,7 +16,7 @@ const TYPES = {
 
 http.createServer((req, res) => {
   if (EXPECTED && (req.headers.authorization || '') !== EXPECTED) {
-    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="nic-deep-field", charset="UTF-8"', 'Content-Type': 'text/plain; charset=utf-8' });
+    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="arc", charset="UTF-8"', 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('此頁面需要帳號密碼');
     return;
   }
@@ -36,4 +36,4 @@ http.createServer((req, res) => {
     });
     fs.createReadStream(file).pipe(res);
   });
-}).listen(process.env.PORT || 3000, () => console.log('NIC Deep Field static server up on', process.env.PORT || 3000));
+}).listen(process.env.PORT || 3000, () => console.log('ARC static server up on', process.env.PORT || 3000));
