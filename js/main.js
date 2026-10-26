@@ -46,12 +46,30 @@ async function boot() {
 
   const ui = new UI(); const controls = new Controls(engine, canvas); const audio = new SpaceAudio();
   const observe = new ObservePanel($('observe'), engine, (iss) => { engine.earthMarker = iss; $('observe').classList.remove('open'); goToEarthMarker(iss); });
-  if (controls.isTouchDevice()) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠 · 右上 ◻ 可隱藏介面', 7000), 1500); }
+  const isTouch = controls.isTouchDevice();
+  if (isTouch) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠', 7000), 6000); }
+
+  // 電影式偏好（localStorage）
+  let prefs = { cine: true, bars: false, breath: true, autohide: true };
+  try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem('ndf-cine') || '{}') }; } catch (e) { /* ignore */ }
+  const savePrefs = () => { try { localStorage.setItem('ndf-cine', JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
+  const applyPrefs = () => { engine.setCine(prefs.cine); engine.breath = prefs.breath; document.body.classList.toggle('cine', prefs.bars); if (!prefs.autohide) document.body.classList.remove('idle'); };
+  engine.camera.fov = 50; engine.camera.updateProjectionMatrix();
+  applyPrefs();
 
   // ---------------- 狀態 ----------------
   let currentEntry = null; let frameNote = ''; let jumping = false; let warp = false;
-  const fx = $('fx'); const fctx = fx.getContext('2d'); let fxLevel = 0;
+  const fx = $('fx'); const fctx = fx.getContext('2d'); let fxLevel = 0, fadeLevel = 0;
   const resizeFx = () => { fx.width = window.innerWidth; fx.height = window.innerHeight; }; resizeFx(); window.addEventListener('resize', resizeFx);
+
+  // 介面閒置自動淡出：4 秒沒有輸入就淡出 HUD 與標籤，任何輸入立即恢復
+  let lastInput = performance.now();
+  const poke = () => { lastInput = performance.now(); if (document.body.classList.contains('idle')) document.body.classList.remove('idle'); };
+  for (const ev of ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'touchmove', 'pointermove']) window.addEventListener(ev, poke, { passive: true });
+  const idleTick = () => {
+    const busy = ui.hidden || $('settings').classList.contains('open') || $('observe').classList.contains('open') || document.activeElement === $('q') || jumping;
+    if (prefs.autohide && !busy && performance.now() - lastInput > 4000) document.body.classList.add('idle');
+  };
 
   function entryForKey(key) {
     if (engine.frame.type === 'solar') return catalog.entries.find((e) => e.kind === 'body' && e.id === key);
@@ -87,12 +105,19 @@ async function boot() {
       frameNote = dest.frame.type !== 'solar' && dest.frame.distKnown === false ? '距離未知，暫置於 100 pc 以供觀看' : '';
       const info = catalog.info(entry);
       ui.showInfo(info, [
-        ['◎ 環繞', () => { controls.setOrbit(dest.target, !controls.orbit); }],
-        ['⟲ 重設視角', () => resetView()],
+        ['環繞', () => { controls.setOrbit(dest.target, !controls.orbit); }],
+        ['重設視角', () => resetView()],
         ...(entry.kind === 'body' && entry.id === 'venus' ? [['切換雷達／雲層', () => { engine.setVenusRadar(!engine.venusRadar); $('s-venus').checked = engine.venusRadar; }]] : []),
       ]);
-      if (dest.frame.type !== 'solar') ui.toast(`已抵達 ${dest.label}（躍遷為模擬功能，真實距離 ${entry.kind === 'bh' ? '' : ''}見資訊面板）`);
-      else ui.toast(`已抵達 ${dest.label}`);
+      ui.markDestination(entry.kind === 'body' ? entry.id : `${entry.kind}:${entry.id}`);
+      if (!instant) {
+        // 標題卡：主名稱放大字，括號內的別名／編號與英文名放第二行
+        const m = /^(.*?)（(.*)）\s*$/.exec(dest.label); const zh = m ? m[1] : dest.label;
+        let en = entry.kind === 'body' ? entry.data.en : entry.kind === 'bh' ? entry.data.en : (entry.sub || '');
+        if (m) en = [m[2], en].filter(Boolean).join(' · ');
+        const sub = dest.frame.type !== 'solar' ? '躍遷為模擬功能 · 真實距離見資訊面板' : '';
+        ui.titleCard(zh, en, sub, 3200);
+      }
     };
     if (instant) { apply(); return; }
     jumping = true; controls.enabled = false;
@@ -100,33 +125,77 @@ async function boot() {
     controls.enabled = true; jumping = false;
   }
 
+  // 躍遷：星光拉絲 → 淡入全黑 → 切換場景 → 由黑緩慢淡出
   function jumpFx(midFn) {
     return new Promise((resolve) => {
       const t0 = performance.now(); let mid = false;
       const step = () => {
         const t = (performance.now() - t0) / 1000;
-        fxLevel = t < 0.5 ? t / 0.5 : Math.max(0, 1 - (t - 0.5) / 0.6);
-        if (!mid && t >= 0.5) { mid = true; midFn(); }
-        if (t < 1.1) requestAnimationFrame(step); else { fxLevel = 0; resolve(); }
+        fxLevel = t < 0.6 ? t / 0.6 : Math.max(0, 1 - (t - 0.6) / 0.5);
+        fadeLevel = t < 0.3 ? 0 : t < 0.7 ? (t - 0.3) / 0.4 : t < 0.95 ? 1 : Math.max(0, 1 - (t - 0.95) / 1.5);
+        if (!mid && t >= 0.72) { mid = true; midFn(); }
+        if (t < 2.5) requestAnimationFrame(step); else { fxLevel = 0; fadeLevel = 0; resolve(); }
       };
       step();
     });
   }
 
+  // 鏡頭眩光：太陽／主星的柔光、變形鏡頭式橫向光斑與鬼影（純視覺效果；被天體遮住時依邊緣平滑消失）
+  function drawFlare(f) {
+    const W = fx.width, H = fx.height; const I = f.intensity; if (I <= 0.01) return;
+    const { x, y } = f;
+    fctx.globalCompositeOperation = 'lighter';
+    const rg = Math.max(W, H) * (0.06 + 0.12 * I);
+    const g = fctx.createRadialGradient(x, y, 0, x, y, rg);
+    g.addColorStop(0, `rgba(255,246,228,${0.5 * I})`); g.addColorStop(0.25, `rgba(255,232,196,${0.16 * I})`); g.addColorStop(1, 'rgba(255,220,180,0)');
+    fctx.fillStyle = g; fctx.fillRect(x - rg, y - rg, rg * 2, rg * 2);
+    const L = W * (0.16 + 0.22 * I);
+    for (const [h, a, c] of [[1.2, 0.42, '170,205,255'], [5, 0.12, '140,180,255'], [20, 0.04, '120,160,255']]) {
+      const sg = fctx.createLinearGradient(x - L, y, x + L, y);
+      sg.addColorStop(0, `rgba(${c},0)`); sg.addColorStop(0.5, `rgba(${c},${a * I})`); sg.addColorStop(1, `rgba(${c},0)`);
+      fctx.fillStyle = sg; fctx.fillRect(x - L, y - h / 2, L * 2, h);
+    }
+    const cx = W / 2, cy = H / 2;
+    for (const [k, r, a, c] of [[-0.4, 0.018, 0.12, '255,200,160'], [-0.85, 0.03, 0.07, '180,220,255'], [-1.5, 0.05, 0.05, '255,230,200'], [0.45, 0.01, 0.14, '200,230,255'], [1.25, 0.04, 0.045, '255,210,180']]) {
+      const gx = cx + (cx - x) * k, gy = cy + (cy - y) * k; const rr = Math.max(W, H) * r;
+      const gg = fctx.createRadialGradient(gx, gy, rr * 0.55, gx, gy, rr);
+      gg.addColorStop(0, `rgba(${c},0)`); gg.addColorStop(0.8, `rgba(${c},${a * I})`); gg.addColorStop(1, `rgba(${c},0)`);
+      fctx.fillStyle = gg; fctx.beginPath(); fctx.arc(gx, gy, rr, 0, Math.PI * 2); fctx.fill();
+    }
+    fctx.globalCompositeOperation = 'source-over';
+  }
+
   // 光速／躍遷視覺：放射狀星光拉絲（純視覺效果）
   const streaks = Array.from({ length: 220 }, () => ({ a: Math.random() * Math.PI * 2, r: Math.random(), l: 0.2 + Math.random() * 0.8 }));
-  function drawFx(level) {
+  function drawFx(level, fade) {
     fctx.clearRect(0, 0, fx.width, fx.height);
-    if (level <= 0.01) return;
-    const cx = fx.width / 2, cy = fx.height / 2, R = Math.hypot(cx, cy);
-    fctx.fillStyle = `rgba(0,0,0,${0.35 * level})`; fctx.fillRect(0, 0, fx.width, fx.height);
-    fctx.lineWidth = 1.2;
-    for (const s of streaks) {
-      s.r += 0.012 * level * (0.5 + s.l); if (s.r > 1) s.r = 0.02;
-      const r0 = s.r * R, r1 = (s.r + 0.08 * level * s.l) * R;
-      fctx.strokeStyle = `rgba(200,220,255,${0.55 * level * s.r})`;
-      fctx.beginPath(); fctx.moveTo(cx + Math.cos(s.a) * r0, cy + Math.sin(s.a) * r0); fctx.lineTo(cx + Math.cos(s.a) * r1, cy + Math.sin(s.a) * r1); fctx.stroke();
+    if (engine.flare && prefs.cine) drawFlare(engine.flare);
+    if (level > 0.01) {
+      const cx = fx.width / 2, cy = fx.height / 2, R = Math.hypot(cx, cy);
+      fctx.fillStyle = `rgba(0,0,0,${0.3 * level})`; fctx.fillRect(0, 0, fx.width, fx.height);
+      fctx.lineWidth = 1.2;
+      for (const s of streaks) {
+        s.r += 0.012 * level * (0.5 + s.l); if (s.r > 1) s.r = 0.02;
+        const r0 = s.r * R, r1 = (s.r + 0.08 * level * s.l) * R;
+        fctx.strokeStyle = `rgba(200,220,255,${0.55 * level * s.r})`;
+        fctx.beginPath(); fctx.moveTo(cx + Math.cos(s.a) * r0, cy + Math.sin(s.a) * r0); fctx.lineTo(cx + Math.cos(s.a) * r1, cy + Math.sin(s.a) * r1); fctx.stroke();
+      }
     }
+    if (fade > 0.005) { fctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade)})`; fctx.fillRect(0, 0, fx.width, fx.height); }
+  }
+
+  // 開場鏡頭：地球夜側、晨昏線上方，太陽正要從地平邊緣升起（大氣邊緣受光＋眩光），並極慢速環繞
+  function openingView() {
+    const e = engine.bodies.get('earth'); if (!e?.axes) return;
+    const pos = e.pos; const R = BODY_BY_KEY.earth.radius;
+    const sunDir = new V3(-pos[0], -pos[1], -pos[2]).normalize(); const up = e.axes.yb.clone();
+    const side = sunDir.clone().applyAxisAngle(up, 2.62).normalize(); // 距太陽方向約 150°：深夜側，太陽剛好在邊緣外
+    const d = R * 2.4;
+    engine.camPos = [pos[0] + side.x * d, pos[1] + side.y * d, pos[2] + side.z * d];
+    const limb = sunDir.clone().sub(side.clone().multiplyScalar(sunDir.dot(side))).normalize(); // 太陽方向在視平面上的分量 → 受光邊緣
+    const look = new V3(pos[0] + limb.x * R * 0.9 + up.x * R * 0.1 - engine.camPos[0], pos[1] + limb.y * R * 0.9 + up.y * R * 0.1 - engine.camPos[1], pos[2] + limb.z * R * 0.9 + up.z * R * 0.1 - engine.camPos[2]);
+    controls.lookAt(look, up);
+    controls.setOrbit('earth', true, 900); controls.orbit.lookLocked = false;
   }
 
   function resetView() {
@@ -173,7 +242,7 @@ async function boot() {
   $('btn-hide').addEventListener('click', () => ui.setHidden(true));
   $('restore').addEventListener('click', () => ui.setHidden(false));
   $('btn-full').addEventListener('click', toggleFullscreen);
-  $('btn-settings').addEventListener('click', () => { $('settings').classList.toggle('open'); ui.fillCatalogInfo(catalog, engine); });
+  $('btn-settings').addEventListener('click', () => { const open = $('settings').classList.toggle('open'); document.body.classList.toggle('settings-open', open); ui.fillCatalogInfo(catalog, engine); });
   $('tab-obs').addEventListener('click', () => { observe.build(); $('observe').classList.add('open'); controls.exitPointerLock(); });
   $('tab-3d').addEventListener('click', () => $('observe').classList.remove('open'));
   // 觸控升降
@@ -183,6 +252,7 @@ async function boot() {
   controls.onCollide = (n) => { if (!controls._collideToast || performance.now() - controls._collideToast > 4000) { controls._collideToast = performance.now(); ui.toast(`已到達 ${n.def.zh} 的觀測邊界（${n.def.minAltitude >= 1000 ? '氣態行星／恆星沒有可站立表面' : '最低安全高度'}）`); } };
   controls.onKey = (code) => {
     if (code === 'KeyH') ui.setHidden(!ui.hidden);
+    if (code === 'KeyC') { prefs.bars = !prefs.bars; savePrefs(); applyPrefs(); const el = $('s-bars'); if (el) el.checked = prefs.bars; }
     if (code === 'KeyO') $('b-orbit').click();
     if (code === 'KeyV') resetView();
     if (code === 'KeyB') goToEarth();
@@ -197,14 +267,18 @@ async function boot() {
     else ui.toast('此裝置不支援全螢幕 API；iOS 可用 Safari「加入主畫面」取得全螢幕體驗');
   }
   ui.buildSettings({
-    quality,
+    quality, ...prefs,
+    onCine: (v) => { prefs.cine = v; savePrefs(); applyPrefs(); },
+    onBars: (v) => { prefs.bars = v; savePrefs(); applyPrefs(); },
+    onBreath: (v) => { prefs.breath = v; savePrefs(); applyPrefs(); },
+    onAutohide: (v) => { prefs.autohide = v; savePrefs(); applyPrefs(); },
     onExposure: (v) => { engine.exposureMode = v; },
     onLabels: (v) => { engine.showLabels = v; ui.labels.style.display = v ? '' : 'none'; },
     onVenus: (v) => engine.setVenusRadar(v),
     onSens: (v) => { controls.sensitivity = 0.0022 * v; },
     onInvert: (v) => { controls.invertY = v; },
     onFov: (v) => { engine.camera.fov = v; engine.camera.updateProjectionMatrix(); },
-    onAudio: (v) => { if (v === 'off') audio.stopAll(); else if (v === 'ambient') audio.ambient(); else { const t = audio.sonify(); $('s-audio-note').innerHTML += '<br>目前音高：' + t.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); } },
+    onAudio: (v) => { if (v === 'off') audio.stopAll(); else if (v === 'ambient') audio.ambient(); else if (v === 'organ') audio.organ(); else if (v === 'arc') audio.arc(); else { const t = audio.sonify(); $('s-audio-note').innerHTML += '<br>目前音高：' + t.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); } },
   });
 
 
@@ -222,10 +296,14 @@ async function boot() {
     },
   };
 
-  // ---------------- 開始 ----------------
+  // ---------------- 開始（開場） ----------------
   goTo(catalog.entries.find((e) => e.kind === 'body' && e.id === 'earth'), { instant: true });
+  openingView();
+  fadeLevel = 1;
   $('loading').classList.add('done');
-  if (errors.length) ui.toast(`有 ${errors.length} 項資源載入失敗，詳見設定 → 載入狀態`, 6000);
+  setTimeout(() => ui.titleCard('ARC', '第一人稱 · 真實比例 · 測試版', '任何輸入即可開始飛行', 5200), 900);
+  const openT0 = performance.now();
+  if (errors.length) setTimeout(() => ui.toast(`有 ${errors.length} 項資源載入失敗，詳見設定 → 載入狀態`, 6000), 6500);
 
   // 主迴圈
   let last = performance.now(); let frames = 0, fpsT = last, fps = 0, uiT = 0;
@@ -241,14 +319,15 @@ async function boot() {
       const u = engine.bhMat.uniforms.uSteps; const maxSteps = engine.bhMaxSteps || (engine.bhMaxSteps = u.value);
       if (dt > 0.05) u.value = Math.max(120, Math.floor(u.value * 0.85)); else if (dt < 0.022) u.value = Math.min(maxSteps, Math.floor(u.value * 1.04) + 1);
     }
-    // 光速效果
+    // 光速效果、開場淡入、眩光
     warp = controls.moving && controls.velocity.length() > 0.3 * C_KM_S;
     const lvl = Math.max(fxLevel, warp ? clamp(Math.log10(controls.velocity.length() / (0.3 * C_KM_S)) * 0.25 + 0.25, 0.25, 0.8) : 0);
-    drawFx(lvl);
+    if (!jumping && fadeLevel > 0) fadeLevel = Math.max(0, 1 - (now - openT0) / 3200);
+    drawFx(lvl, fadeLevel);
     frames++; if (now - fpsT > 1000) { fps = frames; frames = 0; fpsT = now; }
     uiT += dt;
     if (uiT > 0.12) {
-      uiT = 0;
+      uiT = 0; idleTick();
       if (engine.showLabels) ui.updateLabels(engine.labelTargets, engine, (key) => { const e = entryForKey(key); if (e) goTo(e); });
       const tgt = engine.frame.type === 'solar' ? engine.bodies.get(controls.target) : engine.extraBodies.find((x) => x.key === controls.target);
       const rel = tgt ? Math.hypot(tgt.pos[0] - engine.camPos[0], tgt.pos[1] - engine.camPos[1], tgt.pos[2] - engine.camPos[2]) : null;
