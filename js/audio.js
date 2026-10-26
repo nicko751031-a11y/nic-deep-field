@@ -5,9 +5,40 @@
 const PERIODS_DAYS = { mercury: 87.969, venus: 224.701, earth: 365.256, mars: 686.980, jupiter: 4332.59, saturn: 10759.22, uranus: 30688.5, neptune: 60182, pluto: 90560 };
 
 export class SpaceAudio {
-  constructor() { this.ctx = null; this.mode = 'off'; this.nodes = []; }
-  _ensure() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if (this.ctx.state === 'suspended') this.ctx.resume(); }
+  constructor({ AudioContextClass } = {}) {
+    this.ctx = null; this.mode = 'off'; this.nodes = []; this.seq = 0; this.onState = null;
+    this.AudioContextClass = AudioContextClass || (typeof window !== 'undefined' ? (window.AudioContext || window.webkitAudioContext) : null);
+  }
+  _ensure() {
+    if (!this.ctx) {
+      if (!this.AudioContextClass) throw new Error('此瀏覽器不支援 WebAudio');
+      this.ctx = new this.AudioContextClass();
+      // iOS 在來電、切換 App 時會把 context 變成 interrupted／suspended：通知外層把介面改回未播放
+      try { this.ctx.onstatechange = () => { const s = this.ctx?.state; if (s !== 'running' && this.mode !== 'off') { this.stopAll(); this.onState?.({ ok: false, state: s, reason: '音訊被系統暫停' }); } }; } catch (e) { /* ignore */ }
+    }
+  }
   stopAll() { for (const n of this.nodes) { try { n.stop?.(); n.disconnect?.(); } catch (e) { /* ignore */ } } this.nodes = []; if (this.master) { try { this.master.disconnect(); } catch (e) { /* ignore */ } this.master = null; } this.mode = 'off'; }
+
+  // 安全啟動：await resume()，只有 AudioContext 真正 running 才建立節點並回報播放中；
+  // 被拒絕、逾時（3 秒）或仍 suspended 時保持 off、不留節點、不產生未處理的 Promise rejection。
+  // 回傳 { ok, mode, state, reason?, table? }；較晚的呼叫會讓較早未完成的呼叫作廢（不會疊加節點）。
+  async start(mode) {
+    const seq = ++this.seq;
+    if (mode === 'off') { this.stopAll(); return { ok: true, mode: 'off', state: this.ctx?.state || 'closed' }; }
+    if (!['ambient', 'organ', 'arc', 'sonify'].includes(mode)) return { ok: false, mode: 'off', state: this.ctx?.state || 'closed', reason: '未知音景' };
+    try { this._ensure(); } catch (e) { return { ok: false, mode: 'off', state: 'unsupported', reason: e.message }; }
+    const ctx = this.ctx; this.stopAll();
+    if (ctx.state !== 'running') {
+      let reason = '';
+      try { await Promise.race([Promise.resolve(ctx.resume()), new Promise((_, rej) => setTimeout(() => rej(new Error('音訊啟動逾時（瀏覽器可能要求再點一次）')), 3000))]); }
+      catch (e) { reason = e?.message || '瀏覽器拒絕啟動音訊'; }
+      if (seq !== this.seq) return { ok: false, mode: this.mode, state: ctx.state, reason: '已被較新的操作取代' };
+      if (ctx.state !== 'running') { this.stopAll(); return { ok: false, mode: 'off', state: ctx.state, reason: reason || `音訊狀態 ${ctx.state}，尚未啟動` }; }
+    }
+    if (seq !== this.seq) return { ok: false, mode: this.mode, state: ctx.state, reason: '已被較新的操作取代' };
+    let table; try { table = this[mode](); } catch (e) { this.stopAll(); return { ok: false, mode: 'off', state: ctx.state, reason: `建立音訊節點失敗：${e.message}` }; }
+    return { ok: true, mode: this.mode, state: ctx.state, table };
+  }
 
   ambient() {
     this._ensure(); this.stopAll(); this.mode = 'ambient';

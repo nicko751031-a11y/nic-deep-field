@@ -17,6 +17,7 @@
 | A5 | 換用同來源底圖後原 4K 貼圖未釋放（約 45 MB） | 記憶體 | ✅ `9988e08` | Claude | — |
 | A6 | 沒有自動錯誤回報；問題只能靠負責人口述 | 排查慢 | 📋 | Claude | 不加第三方追蹤（隱私、純靜態）；規劃「回報問題」按鈕：把 `?diag=1` 報告以 mailto／複製方式交給負責人。 |
 | A7 | 真機（iPhone／iPad Safari、Android Chrome）從未有系統性驗收 | 所有手機問題都靠回報 | 📋 | 負責人＋GPT | 需要一份固定的真機檢查清單（TESTING.md 已有 iPhone 清單）與每次部署前執行。 |
+| A8 | WebAudio 啟動狀態與介面不同步（`resume()` 未 await；選單預設顯示音景） | ✅ `audio.start()`＋`syncAudioUI`（GPT QA 發現） | Claude | 單元 9 項＋瀏覽器假 AudioContext 測試通過；iOS 真機未測。 |
 
 ## B. 效能
 

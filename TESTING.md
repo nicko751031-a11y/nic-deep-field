@@ -219,3 +219,9 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - 問題（GPT 靜態推導，正確）：加速撤圖後回到即時，只會等 10 分鐘節流到期才重驗。
 - 修正（`js/earthwx.js`）：每秒 tick 追蹤時間閘門「不成立→成立」的轉移（含按「回到現在」），轉移時立即受控重驗；強制重驗 5 秒內只允許一次，其餘延後執行不丟失（`pendingForce`）；驗證中不重複發出；背景頁籤不抓圖，切回可見後才重驗。
 - 測試（`tools/wx_layer_test.mjs` 擴充，route 模擬 GIBS）：按「回到現在」後 1.8 秒自動恢復 ready；反覆切換倍率 20 次只多 0 次請求，結束後恢復 ready；背景頁籤回到即時不抓圖（0 次）、切回可見後恢復；503 仍撤圖；shader 錯誤 0、console 0。
+
+## WebAudio 啟動狀態（2026-10-27，Claude 工程；回應 GPT 在 Issue #8 的 QA 發現）
+
+- 問題（GPT 靜態推導，正確）：`_ensure()` 不 await `resume()`，介面在 context 尚未 running 時就顯示播放中；設定選單預設顯示音景但實際靜音。
+- 修正：`js/audio.js` 新增 `async start(mode)`：await `resume()`（3 秒逾時），只有 `state==='running'` 才建立節點並回報 `{ok:true}`；拒絕／逾時／仍 suspended 時保持 off、不留節點、不產生未處理 rejection；較晚的呼叫取代較早未完成者；`onstatechange` 偵測 iOS interrupted／suspended 時停止並通知。`js/main.js`：按鈕與設定選單一律由 `start()` 結果同步（`syncAudioUI`），失敗 toast 說明原因；開頁時選單顯示靜音。
+- 測試：`node --test tools/test_audio.mjs` 9 項（成功／拒絕／仍 suspended／逾時／切換 20 次節點峰值 ≤ 單一音景、停止後 0／較晚呼叫取代／系統暫停／不支援／無未處理 rejection）全部通過；`tools/audio_ui_test.mjs`（無頭 Chromium 以假 AudioContext）：拒絕→未播放＋提示、成功→播放中、選單切換、靜音、系統暫停→回未播放、連按 20 次後節點 0、console 0。**iOS Safari 真機未測**（真實手勢與靜音鍵行為需真機）。

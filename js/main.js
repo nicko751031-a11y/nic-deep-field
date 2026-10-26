@@ -53,21 +53,17 @@ async function boot() {
 
   const ui = new UI(); const controls = new Controls(engine, canvas); const audio = new SpaceAudio();
   const musicButton = $('btn-music');
-  musicButton?.addEventListener('click', () => {
-    try {
-      if (audio.mode === 'ambient') {
-        audio.stopAll();
-        musicButton.textContent = '♫';
-        musicButton.setAttribute('aria-pressed', 'false');
-        musicButton.title = '開啟合成低頻音景';
-      } else {
-        audio.ambient();
-        musicButton.textContent = '♪';
-        musicButton.setAttribute('aria-pressed', 'true');
-        musicButton.title = '關閉合成低頻音景';
-      }
-    } catch (error) { ui.toast('音樂啟動失敗，請再點一次或檢查 Safari 音量'); }
-  });
+  // 音訊狀態只以 AudioContext 真正 running 為準（audio.start() 會 await resume）；失敗或被系統暫停時介面回到未播放並說明原因
+  const syncAudioUI = (r) => {
+    const playing = audio.mode !== 'off';
+    if (musicButton) { musicButton.textContent = playing ? '♪' : '♫'; musicButton.setAttribute('aria-pressed', String(playing)); musicButton.title = playing ? '關閉音景' : '開啟合成低頻音景'; }
+    const sel = $('s-audio'); if (sel && sel.value !== audio.mode) sel.value = audio.mode;
+    if (r && !r.ok && r.reason !== '已被較新的操作取代') ui.toast(`音訊未啟動：${r.reason}。請再點一次，iPhone 請確認未開靜音切換鍵`, 6000);
+  };
+  audio.onState = syncAudioUI;
+  let audioBusy = false;
+  const startAudio = async (mode) => { if (audioBusy) return; audioBusy = true; try { const r = await audio.start(mode); syncAudioUI(r); return r; } finally { audioBusy = false; } };
+  musicButton?.addEventListener('click', () => { startAudio(audio.mode === 'off' ? 'ambient' : 'off'); });
   const observe = new ObservePanel($('observe'), engine, (iss) => { engine.earthMarker = iss; $('observe').classList.remove('open'); goToEarthMarker(iss); });
   const isTouch = controls.isTouchDevice();
   if (isTouch) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠', 7000), 6000); }
@@ -313,8 +309,9 @@ async function boot() {
     onSens: (v) => { controls.sensitivity = 0.0022 * v; },
     onInvert: (v) => { controls.invertY = v; },
     onFov: (v) => { engine.camera.fov = v; engine.camera.updateProjectionMatrix(); },
-    onAudio: (v) => { if (v === 'off') audio.stopAll(); else if (v === 'ambient') audio.ambient(); else if (v === 'organ') audio.organ(); else if (v === 'arc') audio.arc(); else { const t = audio.sonify(); $('s-audio-note').innerHTML += '<br>目前音高：' + t.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); } },
+    onAudio: async (v) => { const r = await startAudio(v); if (r?.ok && v === 'sonify' && r.table) $('s-audio-note').innerHTML += '<br>目前音高：' + r.table.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); },
   });
+  syncAudioUI(); // 開頁時音訊為 off：選單與按鈕都顯示未播放，不預先顯示音景已選
 
 
   const earthView = new EarthSurfaceView(engine, controls, ui);
