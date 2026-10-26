@@ -141,7 +141,7 @@ export class UI {
       ${row('寬銀幕黑邊 2.39:1（C）', `<input type="checkbox" id="s-bars" ${opts.bars ? 'checked' : ''}>`)}
       ${row('鏡頭呼吸（極小幅緩慢擺動）', `<input type="checkbox" id="s-breath" ${opts.breath ? 'checked' : ''}>`)}
       ${row('介面閒置 4 秒後自動淡出', `<input type="checkbox" id="s-autohide" ${opts.autohide ? 'checked' : ''}>`)}
-      ${row('聲音', `<select id="s-audio"><option value="off">靜音（真空，預設）</option><option value="arc">ARC 原創電影感配樂（純合成）</option><option value="organ">合成管風琴式音景（純合成）</option><option value="ambient">合成低頻音景（純合成）</option><option value="sonify">資料聲化：行星公轉頻率</option></select>`)}
+      ${row('聲音', `<select id="s-audio"><option value="off">靜音（尚未播放）</option><option value="arc">ARC 原創電影感配樂（純合成）</option><option value="organ">合成管風琴式音景（純合成）</option><option value="ambient">合成低頻音景（預設選曲，純合成）</option><option value="sonify">資料聲化：行星公轉頻率</option></select>`)}
       <div class="sub" id="s-audio-note">ARC 原創配樂＝WebAudio 自行合成的四段緩慢和聲循環，不含任何電影配樂旋律或錄音。管風琴式音景＝WebAudio 加法合成的持續和弦，不是錄音，也不是任何電影配樂。低頻音景＝濾波雜訊。資料聲化＝把各行星公轉頻率（1/週期）升高若干八度到可聽範圍，每顆一個正弦音；來源 JPL 軌道週期。宇宙中沒有可被錄下的「太空聲音」，三者都不是真實錄音。</div>
       <details><summary>目錄收錄範圍與資料來源</summary><div id="s-catalog"></div></details>
       <details><summary>貼圖與影像來源／載入狀態</summary><div id="s-textures"></div></details>
@@ -152,6 +152,7 @@ export class UI {
         <li>相對論效果（光行差、都卜勒）未在飛行時模擬；「光速」只是視覺特效與壓縮旅行時間。</li>
         <li>真實觀測來源由瀏覽器直接讀取，部分來源可能因 CORS 或停機失敗；失敗時會明示，不會以舊圖冒充。</li>
       </ul></details>`;
+    $('s-audio').value = 'ambient'; // 預設選曲，須使用者點擊播放才會發聲
     $('s-quality').value = opts.quality;
     $('s-quality').addEventListener('change', (e) => { localStorage.setItem('ndf-quality', e.target.value); location.reload(); });
     $('s-exposure').addEventListener('change', (e) => opts.onExposure(e.target.value));
