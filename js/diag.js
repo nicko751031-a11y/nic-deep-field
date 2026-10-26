@@ -16,7 +16,7 @@ export function initDiag(engine, controls, { quality } = {}) {
     dpr: window.devicePixelRatio, pixelRatio: engine.renderer.getPixelRatio(), drawingBuffer: `${gl.drawingBufferWidth}×${gl.drawingBufferHeight}`,
     quality, logDepth: engine.renderer.capabilities.logarithmicDepthBuffer, cores: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory ?? '?', ua: navigator.userAgent,
   };
-  const state = { lost: 0, errors: engine.shaderErrors || [], consoleErrors: [], fps: 0, fpsMin: 999, frame: 0, t0: performance.now(), samples: [] };
+  const state = { lost: 0, errors: engine.shaderErrors || [], consoleErrors: [], fps: 0, fpsMin: 999, frame: 0, t0: performance.now(), samples: [], nanPixels: 0, nanScans: 0, blackFrames: 0, lumaMax: 0, lumaLast: 0 };
   engine.canvas.addEventListener('webglcontextlost', () => { state.lost++; }, false);
   const origErr = console.error.bind(console);
   console.error = (...a) => { state.consoleErrors.push(a.map((x) => String(x?.message || x)).join(' ').slice(0, 400)); if (state.consoleErrors.length > 20) state.consoleErrors.shift(); origErr(...a); };
@@ -43,9 +43,12 @@ export function initDiag(engine, controls, { quality } = {}) {
     breath: btn('鏡頭呼吸', () => { flags.breath = !flags.breath; engine.breath = flags.breath; refresh(); }),
     aniso: btn('各向異性過濾', () => { flags.aniso = !flags.aniso; for (const t of Object.values(engine.textures || {})) { if (t) { t.anisotropy = flags.aniso ? engine.maxAniso : 1; t.needsUpdate = true; } } refresh(); }),
     flare: btn('眩光', () => { flags.flare = !flags.flare; engine.flareDisabled = !flags.flare; refresh(); }),
+    post: btn('後處理（整組）', () => { flags.post = !flags.post; engine.setPost(flags.post); refresh(); }),
   };
+  flags.post = engine.postOn !== false;
   for (const b of Object.values(tbtns)) toggles.appendChild(b);
-  toggles.appendChild(btn('像素比 1', () => { engine.renderer.setPixelRatio(1); engine.resize(); }));
+  toggles.appendChild(btn('像素比 1', () => { engine.maxPixelRatio = 1; engine.resize(); }));
+  toggles.appendChild(btn('安全模式（重載）', () => { const u = new URL(location.href); u.searchParams.set('safe', '1'); location.href = u.toString(); }));
   toggles.appendChild(btn(caps.logDepth ? '關閉對數深度（重載）' : '開啟對數深度（重載）', () => { const u = new URL(location.href); if (caps.logDepth) u.searchParams.set('nolog', '1'); else u.searchParams.delete('nolog'); location.href = u.toString(); }));
   for (const q of ['low', 'medium', 'high']) toggles.appendChild(btn(`畫質 ${q}（重載）`, () => { const u = new URL(location.href); u.searchParams.set('quality', q); location.href = u.toString(); }));
   toggles.appendChild(btn('前往地球', () => { const e = window.__ndf?.catalog.entries.find((x) => x.kind === 'body' && x.id === 'earth'); if (e) window.__ndf.goTo(e, { instant: true }); }));
@@ -54,7 +57,7 @@ export function initDiag(engine, controls, { quality } = {}) {
 
   // ---- 報告（複製到剪貼簿 ＋ 文字框）
   const ta = document.createElement('textarea'); ta.style.cssText = 'width:100%;height:90px;font:10px monospace;background:#000;color:#9fd9b4;border:1px solid rgba(255,255,255,.2);margin-top:6px'; ta.readOnly = true;
-  const report = () => JSON.stringify({ time: new Date().toISOString(), caps, flags, fps: { avg: state.fps, min: state.fpsMin }, frame: engine.renderer.info.render, memory: engine.renderer.info.memory, programs: engine.renderer.info.programs?.length, jsHeapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, contextLost: state.lost, shaderErrors: state.errors, consoleErrors: state.consoleErrors, frameType: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) }, null, 1);
+  const report = () => JSON.stringify({ time: new Date().toISOString(), caps, flags, fps: { avg: state.fps, min: state.fpsMin }, frame: engine.renderer.info.render, memory: engine.renderer.info.memory, programs: engine.renderer.info.programs?.length, jsHeapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, contextLost: state.lost, engineContextLost: engine.contextLost, degrade: engine.degrade, pixelRatioNow: engine.renderer.getPixelRatio(), post: engine.postOn, nan: { scans: state.nanScans, pixels: state.nanPixels, first: state.nanFirst || null }, blackFrames: state.blackFrames, lumaMax: state.lumaMax, shaderErrors: state.errors, consoleErrors: state.consoleErrors, frameType: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) }, null, 1);
   box.appendChild(btn('產生／複製報告', async () => { const r = report(); ta.value = r; ta.style.display = ''; try { await navigator.clipboard.writeText(r); ta.value = '（已複製到剪貼簿）\n' + r; } catch (e) { /* iOS 可能拒絕，改由文字框手動複製 */ } }));
   box.appendChild(btn('隱藏診斷', () => { box.style.display = 'none'; }));
   ta.style.display = 'none'; box.appendChild(ta);
@@ -65,7 +68,12 @@ export function initDiag(engine, controls, { quality } = {}) {
     const dt = now - last; last = now; acc += dt; n++;
     if (acc >= 1000) { state.fps = Math.round(n * 1000 / acc); if (state.frame > 3) state.fpsMin = Math.min(state.fpsMin, state.fps); state.frame++; acc = 0; n = 0;
       const r = engine.renderer.info.render, m = engine.renderer.info.memory;
-      live.textContent = `FPS ${state.fps}（最低 ${state.fpsMin === 999 ? '—' : state.fpsMin}） · 繪製 ${r.calls} 次 · 三角形 ${r.triangles.toLocaleString()} · 貼圖 ${m.textures} · 幾何 ${m.geometries} · 程式 ${engine.renderer.info.programs?.length ?? '?'}\nframe ${engine.frame.type} · 黑洞步數 ${engine.frame.type === 'bh' ? engine.bhMat.uniforms.uSteps.value : '—'} · context lost ${state.lost}\nshader 錯誤 ${state.errors.length}${state.errors.length ? '\n' + state.errors.map((e) => '  ' + e.slice(0, 220)).join('\n') : ''}${state.consoleErrors.length ? '\nconsole 錯誤 ' + state.consoleErrors.length + '：' + state.consoleErrors[state.consoleErrors.length - 1].slice(0, 160) : ''}`;
+      // 每秒掃描一次場景輸出（低解析）：非有限值像素數與平均亮度；亮度突然掉到峰值 3% 以下視為黑幀
+      try {
+        const s = engine.scanNonFinite(0.08); state.nanScans++; state.nanPixels += s.bad; if (s.bad && !state.nanFirst) state.nanFirst = { ...s.first, frame: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) };
+        state.lumaLast = s.meanLuma; if (state.lumaMax > 0.005 && s.meanLuma < state.lumaMax * 0.03) state.blackFrames++; state.lumaMax = Math.max(state.lumaMax * 0.995, s.meanLuma);
+      } catch (e) { state.scanError = String(e.message || e); }
+      live.textContent = `FPS ${state.fps}（最低 ${state.fpsMin === 999 ? '—' : state.fpsMin}） · 繪製 ${r.calls} 次 · 三角形 ${r.triangles.toLocaleString()} · 貼圖 ${m.textures} · 幾何 ${m.geometries} · 程式 ${engine.renderer.info.programs?.length ?? '?'}\nframe ${engine.frame.type} · 黑洞步數 ${engine.frame.type === 'bh' ? engine.bhMat.uniforms.uSteps.value : '—'} · context lost ${state.lost}（引擎 ${engine.contextLost}，降級 ${engine.degrade}）· 像素比 ${engine.renderer.getPixelRatio()} · 後處理 ${engine.postOn ? '開' : '關'}\n非有限值像素 ${state.nanPixels}／${state.nanScans} 次掃描${state.nanFirst ? `（首見 ${state.nanFirst.frame} (${state.nanFirst.x},${state.nanFirst.y})）` : ''} · 黑幀 ${state.blackFrames} · 亮度 ${state.lumaLast.toFixed(4)}（峰 ${state.lumaMax.toFixed(4)}）${state.scanError ? ' · 掃描錯誤 ' + state.scanError : ''}\nshader 錯誤 ${state.errors.length}${state.errors.length ? '\n' + state.errors.map((e) => '  ' + e.slice(0, 220)).join('\n') : ''}${state.consoleErrors.length ? '\nconsole 錯誤 ' + state.consoleErrors.length + '：' + state.consoleErrors[state.consoleErrors.length - 1].slice(0, 160) : ''}`;
     }
     requestAnimationFrame(tick);
   };

@@ -26,10 +26,18 @@ function bbColor(T) { // 黑體近似色（線性空間近似）
 export function bvToTemp(bv) { return 4600 * (1 / (0.92 * bv + 1.7) + 1 / (0.92 * bv + 0.62)); }
 
 export class Engine {
-  constructor(canvas, { quality = 'high', logDepth = true } = {}) {
+  // post=false：安全模式，不經 EffectComposer（無 Bloom／電影後製），直接畫到畫布；maxPixelRatio：像素比上限（安全模式 1）
+  constructor(canvas, { quality = 'high', logDepth = true, post = true, maxPixelRatio } = {}) {
     this.canvas = canvas;
     this.quality = quality;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', logarithmicDepthBuffer: logDepth, powerPreference: 'high-performance' });
+    this.postOn = post;
+    // 經後處理時場景畫在 composer 的暫存上，畫布本身的 MSAA 不會作用在場景，只浪費記憶體（iPad 容易觸發 context lost），改由 composer 暫存做 MSAA
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !post && quality !== 'low', logarithmicDepthBuffer: logDepth, powerPreference: 'high-performance' });
+    // WebGL context 遺失／恢復：preventDefault 讓瀏覽器可以恢復；每次遺失自動降一級（像素比、Bloom），避免反覆遺失造成黑屏閃爍
+    this.contextLost = 0; this.degrade = 0;
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.contextLost++; this.onContextLost?.(this.contextLost); }, false);
+    canvas.addEventListener('webglcontextrestored', () => { this.degrade = Math.min(3, this.degrade + 1); if (this._scanRT) { this._scanRT.dispose(); this._scanRT = null; } this.resize(); this.onContextRestored?.(this.degrade); }, false);
+    this.maxPixelRatio = maxPixelRatio ?? (quality === 'high' ? 2 : 1.25);
     // shader 編譯／連結錯誤：保留摘要供診斷模式顯示（仍照常輸出到 console）
     this.shaderErrors = [];
     this.renderer.debug.onShaderError = (gl, program, vs, fs) => {
@@ -37,7 +45,7 @@ export class Engine {
       this.shaderErrors.push(msg.slice(0, 600));
       console.error('THREE.WebGLProgram: Shader Error', msg);
     };
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2 : 1.25));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxPixelRatio));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -84,7 +92,10 @@ export class Engine {
   // ------------------------------------------------------------- 後處理
   _initPost() {
     const size = this.renderer.getSize(new THREE.Vector2());
-    this.composer = new EffectComposer(this.renderer);
+    // 場景暫存：半浮點（Bloom 需要 HDR）；高畫質用 4× MSAA（WebGL2），中低畫質不用以省記憶體
+    const pr = this.renderer.getPixelRatio();
+    const rt = new THREE.WebGLRenderTarget(Math.max(1, size.x * pr), Math.max(1, size.y * pr), { type: THREE.HalfFloatType, samples: this.quality === 'high' ? 4 : 0 });
+    this.composer = new EffectComposer(this.renderer, rt);
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
     this.useBloom = this.quality !== 'low';
@@ -106,8 +117,17 @@ export class Engine {
     u.uGrain.value = on ? (this.quality === 'low' ? 0 : 0.025) : 0; u.uVignette.value = on ? 0.32 : 0; u.uAberration.value = on ? (this.quality === 'low' ? 0 : 0.003) : 0; u.uGrade.value = on ? 1 : 0;
   }
 
+  // 像素比：受畫質上限、總像素上限（高 4.6 MP／中 2.6 MP／低 1.6 MP，避免大尺寸 iPad 的暫存超出 GPU 記憶體）與 context lost 降級限制
+  pixelRatioFor(w, h) {
+    const cap = (this.quality === 'high' ? 4.6e6 : this.quality === 'medium' ? 2.6e6 : 1.6e6) * Math.pow(0.6, this.degrade);
+    const pr = Math.min(window.devicePixelRatio || 1, this.maxPixelRatio, Math.sqrt(cap / Math.max(1, w * h)));
+    return Math.max(0.5, Math.round(pr * 100) / 100);
+  }
+
   resize() {
     const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
+    const pr = this.pixelRatioFor(w, h); if (Math.abs(pr - this.renderer.getPixelRatio()) > 0.001) this.renderer.setPixelRatio(pr);
+    if (this.bloom && this.degrade >= 2) this.bloom.enabled = false; // 連續兩次 context lost：關閉 Bloom
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
@@ -675,7 +695,30 @@ export class Engine {
   render() {
     this.cine.material.uniforms.uTime.value = this.elapsed;
     this.renderer.info.autoReset = false; this.renderer.info.reset(); // 讓 info 統計整個 composer 幀（多個 pass），供診斷模式讀取
-    this.composer.render();
+    if (this.postOn) this.composer.render();
+    else { this.renderer.setRenderTarget(null); this.renderer.render(this.scene, this.camera); }
+  }
+  setPost(on) { this.postOn = !!on; }
+
+  // 診斷：把場景（不含後處理）畫到浮點暫存並讀回，統計非有限值（NaN／Inf）像素與平均亮度。
+  // NaN 進入 Bloom 的降採樣鏈會把大片畫面染黑並逐幀變化（黑屏閃爍）；此掃描用來定位來源。
+  scanNonFinite(scale = 0.5) {
+    const pr = this.renderer.getPixelRatio();
+    const w = Math.max(8, Math.floor(this.width * pr * scale)), h = Math.max(8, Math.floor(this.height * pr * scale));
+    if (!this._scanRT) this._scanRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true, stencilBuffer: false });
+    else if (this._scanRT.width !== w || this._scanRT.height !== h) this._scanRT.setSize(w, h);
+    const prev = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this._scanRT); this.renderer.render(this.scene, this.camera);
+    const buf = new Float32Array(w * h * 4);
+    this.renderer.readRenderTargetPixels(this._scanRT, 0, 0, w, h, buf);
+    this.renderer.setRenderTarget(prev);
+    let bad = 0, sum = 0, maxV = 0, first = null;
+    for (let i = 0; i < w * h; i++) {
+      const r = buf[i * 4], g = buf[i * 4 + 1], b = buf[i * 4 + 2];
+      if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) { bad++; if (!first) first = { x: i % w, y: h - 1 - Math.floor(i / w) }; continue; }
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b; sum += l; if (l > maxV) maxV = l;
+    }
+    return { w, h, bad, first, meanLuma: sum / (w * h), maxLuma: maxV };
   }
 
   // 投影到螢幕（給 HTML 標籤）

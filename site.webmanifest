@@ -1,0 +1,12 @@
+{
+  "name": "ARC",
+  "short_name": "ARC",
+  "description": "第一人稱、真實比例、可自由飛行的網頁 3D 宇宙探索（測試版）",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "zh-Hant",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

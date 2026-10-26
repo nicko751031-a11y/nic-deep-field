@@ -151,3 +151,16 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - 已在 `PLANET_VERT`、`PLANET_FRAG`、`EARTH_FRAG`、`ATMO_VERT`、`ATMO_FRAG` 補上 three.js 對數深度緩衝的標準 shader chunks，讓自訂 ShaderMaterial 與既有 `logarithmicDepthBuffer` 設定一致。此為深度精度風險修正，不能宣稱必然解決破圖。
 - 待驗證：GLSL 編譯、iPhone Safari 真機黑色多邊形、地球與大氣遮擋關係、土星環、黑洞及深空 frame 的相容性。
 - 近距離地球貼圖仍為 4096px NASA 歷史合成影像，尚未導入分塊高解析度 LOD；不得宣稱已具備真實地形細節。
+
+## 黑屏閃爍排查與穩定性修正（2026-10-27，Claude 工程；`claude/stability-flicker`）
+
+- **回報**：負責人「畫面會一直閃爍黑屏」（裝置未註明）。
+- **重現嘗試（無頭 Chromium + SwiftShader，`tools/nan_sweep.mjs`，quality=medium）**：開場、台灣 500 km、北極／南極 300 km、晨昏線 60 km、20,000 km、土星、太陽、Sgr A*、TRAPPIST-1 e、M31 共 11 個場景：場景輸出非有限值（NaN／Inf）像素皆 0；每場景連續 6 幀最終畫面平均亮度穩定（例如土星 13.7–13.8、太陽 27.6–28.4），無黑幀；shader 錯誤 0、console 0。**本環境無法重現**，判定為裝置特定（iPad／iPhone Safari 或特定 GPU）。
+- **已處理的四個可能原因**（全部不改天文資料與標示）：
+  1. WebGL context 反覆遺失（記憶體不足）：`webglcontextlost` 改為 `preventDefault` 使其可恢復；恢復後自動降級（像素總量 ×0.6／次，第二次起關閉 Bloom），並以 toast 告知。模擬測試（`WEBGL_lose_context`）：遺失→恢復後畫面亮度與遺失前相同（0.0123）、非有限值 0、shader 錯誤 0、toast「顯示晶片重置…」。
+  2. NaN 進入 Bloom 鏈：9 個片段著色器輸出前 `safeColor()`（NaN／Inf → 0），地球法線切線 `safeNormalize()`。
+  3. 記憶體：畫布 `antialias` 在經後處理時無作用，改關；高畫質改由 composer 暫存 4× MSAA；像素總量上限高 4.6 MP／中 2.6 MP／低 1.6 MP（大尺寸 iPad 不再用 1.25× DPR 配滿版）。
+  4. 安全模式 `?safe=1`（設定面板可切）：不經後處理、不用對數深度、像素比 1、關呼吸與顆粒，供負責人二分法。
+- **診斷模式新增**：每秒掃描非有限值像素與平均亮度，統計「黑幀」（亮度掉到峰值 3% 以下）、context lost（引擎計數與降級次數）、像素比、後處理開關；報告 JSON 一併輸出。請在閃爍的裝置開 `?diag=1` 觀察 1 分鐘後按「產生／複製報告」。
+- **其他修正**：favicon／manifest／og 標籤；`prefers-reduced-motion` 預設關閉呼吸與電影後製；眩光 2D 畫布沒有內容時不重畫。
+- **回歸**：`tools/browser_test.mjs` 桌面＋Pixel 7 直橫向（結果見本次 PR 說明）；`?safe=1` 可正常載入並渲染。真機未測。

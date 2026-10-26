@@ -103,6 +103,12 @@ if (!mobile) {
   await page.click('#obs-close'); await page.waitForTimeout(500);
   // 設定面板
   await page.click('#btn-settings'); await page.waitForTimeout(500); await shot('50-settings');
+  // GPU 診斷模式：重新載入 ?diag=1，記錄能力、效能與 shader 錯誤數
+  await page.goto(base + (base.includes('?') ? '&' : '?') + 'diag=1', { waitUntil: 'load' });
+  await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done'), null, { timeout: 120000 });
+  await page.waitForTimeout(4500); await shot('60-diag');
+  const diag = await page.evaluate(() => window.__ndfDiag ? JSON.parse(window.__ndfDiag.report()) : null);
+  say(`diag: ${diag ? JSON.stringify({ renderer: diag.caps.renderer, depthBits: diag.caps.depthBits, fragHighp: diag.caps.fragHighp, logDepth: diag.caps.logDepth, fps: diag.fps, calls: diag.frame.calls, triangles: diag.frame.triangles, textures: diag.memory.textures, programs: diag.programs, shaderErrors: diag.shaderErrors.length }) : 'diag unavailable'}`);
 } else {
   // 手機：目的地按鈕、觸控搖桿、隱藏介面（先送一個輸入事件讓閒置淡出的介面恢復）
   const wake = () => page.evaluate(() => window.dispatchEvent(new Event('pointermove')));

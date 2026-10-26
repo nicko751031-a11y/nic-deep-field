@@ -5,6 +5,12 @@
 //  - 星環：幾何薄盤，光學厚度貼圖；行星對環、環對行星的影子以幾何投影計算
 //  - 太陽：程序雜訊米粒組織 + 臨邊昏暗（示意）
 
+// 非有限值防護：任何 NaN／Inf 進入 Bloom 的降採樣鏈都會把大片畫面染黑（黑屏閃爍），輸出前一律歸零
+export const SAFE_GLSL = /* glsl */`
+  vec3 safeColor(vec3 c) { return (any(isnan(c)) || any(isinf(c))) ? vec3(0.0) : max(c, vec3(0.0)); }
+  vec3 safeNormalize(vec3 v) { float l2 = dot(v, v); return l2 > 1e-14 ? v * inversesqrt(l2) : vec3(0.0); }
+`;
+
 export const PLANET_VERT = /* glsl */`
   varying vec3 vWorldPos;   // 相對相機（浮動原點）
   varying vec3 vNormal;
@@ -55,6 +61,7 @@ const RING_SHADOW_FN = /* glsl */`
 
 export const PLANET_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos; varying vec3 vNormal; varying vec2 vUv; varying vec3 vObjPos;
   uniform sampler2D uMap;
@@ -92,12 +99,13 @@ export const PLANET_FRAG = /* glsl */`
       float lit = smoothstep(-0.25, 0.35, ndl);
       col += uAtmoColor * fres * lit * uAtmoStrength * 0.6 * uSunIntensity;
     }
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(safeColor(col), 1.0);
   }
 `;
 
 export const EARTH_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos; varying vec3 vNormal; varying vec2 vUv; varying vec3 vObjPos;
   varying vec3 vTangent; varying vec3 vBitangent;
@@ -120,7 +128,7 @@ export const EARTH_FRAG = /* glsl */`
     // 法線貼圖（切線框架由球面參數推得）
     vec3 pn = normalize(vObjPos);
     vec3 nm = texture2D(uNormal, vUv).xyz * 2.0 - 1.0;
-    vec3 nWorld = normalize(n + (normalize(vTangent) * nm.x + normalize(vBitangent) * nm.y) * uNormalStrength);
+    vec3 nWorld = normalize(n + (safeNormalize(vTangent) * nm.x + safeNormalize(vBitangent) * nm.y) * uNormalStrength);
     vec3 day = texture2D(uDay, vUv).rgb;
     vec3 brc = texture2D(uBRC, vUv).rgb;         // R 高度、G 粗糙度、B 雲
     vec3 night = texture2D(uNight, vUv).rgb;
@@ -161,7 +169,7 @@ export const EARTH_FRAG = /* glsl */`
     col += twilight * exp(-pow(ndl0 / 0.14, 2.0)) * fres * 0.5;
     // 整體薄霧（高空看地面偏藍）
     col = mix(col, uAtmoColor * lit * 0.9, (1.0 - mu) * 0.08 * lit);
-    gl_FragColor = vec4(col * uSunIntensity, 1.0);
+    gl_FragColor = vec4(safeColor(col * uSunIntensity), 1.0);
   }
 `;
 
@@ -179,6 +187,7 @@ export const ATMO_VERT = /* glsl */`
 `;
 export const ATMO_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos;
   uniform vec3 uCenter;        // 相對相機
@@ -216,7 +225,7 @@ export const ATMO_FRAG = /* glsl */`
     // 晨昏線附近偏紅（短波被散射掉）
     float ndl = dot(nrm, uSunDir);
     col = mix(col, col * vec3(1.6, 0.8, 0.45), exp(-pow(ndl / 0.18, 2.0)) * 0.7);
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(safeColor(col), 1.0);
   }
 `;
 
@@ -231,6 +240,7 @@ export const RING_VERT = /* glsl */`
 `;
 export const RING_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos; varying vec3 vLocal;
   uniform sampler2D uRingMap; uniform float uInner, uOuter, uRp;
@@ -258,7 +268,7 @@ export const RING_FRAG = /* glsl */`
     float phase = pow(max(dot(v, uSunDir), 0.0), 2.0) * 0.25 + 1.0;
     vec3 col = ring.rgb * bright * shadow * phase * uSunIntensity;
     float alpha = ring.a * mix(1.0, 0.35, uFaint);
-    gl_FragColor = vec4(col, alpha);
+    gl_FragColor = vec4(safeColor(col), clamp(alpha, 0.0, 1.0));
   }
 `;
 
@@ -273,6 +283,7 @@ export const SUN_VERT = /* glsl */`
 `;
 export const SUN_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   #include <logdepthbuf_pars_fragment>
   varying vec3 vObj; varying vec3 vNormal; varying vec3 vWorldPos;
   uniform float uTime; uniform float uIntensity;
@@ -291,7 +302,7 @@ export const SUN_FRAG = /* glsl */`
     vec3 base = vec3(1.0, 0.86, 0.62);
     vec3 col = base * (0.85 + 0.35 * g) * limb;
     col = mix(col, col * 0.25, spots * 0.9);
-    gl_FragColor = vec4(col * uIntensity, 1.0);
+    gl_FragColor = vec4(safeColor(col * uIntensity), 1.0);
   }
 `;
 
@@ -326,6 +337,7 @@ export const STAR_VERT = /* glsl */`
 `;
 export const STAR_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   varying float vAlpha; varying vec3 vColor;
   void main() {
     vec2 d = gl_PointCoord - 0.5;
@@ -334,7 +346,7 @@ export const STAR_FRAG = /* glsl */`
     float halo = exp(-r * 2.6) * 0.35;
     float a = (core + halo) * vAlpha;
     if (a < 0.004) discard;
-    gl_FragColor = vec4(mix(vColor, vec3(1.0), core * 0.6) * a, a);
+    gl_FragColor = vec4(safeColor(mix(vColor, vec3(1.0), core * 0.6) * a), clamp(a, 0.0, 1.0));
   }
 `;
 
@@ -352,6 +364,7 @@ export const SKY_VERT = /* glsl */`
 `;
 export const SKY_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   varying vec3 vDir;
   uniform sampler2D uSky; uniform float uIntensity;
   const float OBL = 0.40909;  // 23.4393°
@@ -365,13 +378,14 @@ export const SKY_FRAG = /* glsl */`
     float dec = asin(clamp(q.z, -1.0, 1.0));
     vec2 uv = vec2(0.5 + ra / 6.2831853, 0.5 - dec / 3.1415927);
     vec3 col = texture2D(uSky, uv).rgb;
-    gl_FragColor = vec4(col * uIntensity, 1.0);
+    gl_FragColor = vec4(safeColor(col * uIntensity), 1.0);
   }
 `;
 
 // 史瓦西黑洞：全螢幕光線追蹤（Binet 方程 u'' = -u + 1.5 u²，rs = 1）
 export const BH_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   varying vec3 vDir;
   uniform vec3 uCamPos;        // 單位：rs
   uniform sampler2D uSky; uniform float uSkyIntensity;
@@ -466,7 +480,7 @@ export const BH_FRAG = /* glsl */`
       // 若 u 很小 (遠離)，用解析方向近似：
       col += skyColor(outDir) * trans;
     }
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(safeColor(col), 1.0);
   }
 `;
 
@@ -477,6 +491,7 @@ export const CINE_VERT = /* glsl */`
 `;
 export const CINE_FRAG = /* glsl */`
   precision highp float;
+  ${SAFE_GLSL}
   varying vec2 vUv;
   uniform sampler2D tDiffuse;
   uniform float uTime, uGrain, uVignette, uAberration, uGrade;
@@ -501,6 +516,6 @@ export const CINE_FRAG = /* glsl */`
     vec2 gp = mod(floor(gl_FragCoord.xy) + floor(fract(uTime * 7.31) * 977.0) * vec2(13.0, 7.0), 2048.0);
     float g = hash(gp) - 0.5;
     col += g * uGrain * (1.0 - l * 0.75);
-    gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    gl_FragColor = vec4(clamp(safeColor(col), 0.0, 1.0), 1.0);
   }
 `;

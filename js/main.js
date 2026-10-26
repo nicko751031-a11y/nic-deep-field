@@ -27,11 +27,13 @@ async function boot() {
   window.addEventListener('error', (e) => { if (errors.length < 8) report(`錯誤：${e.message}`); });
   window.addEventListener('unhandledrejection', (e) => { if (errors.length < 8) report(`錯誤：${e.reason?.message || e.reason}`); });
 
-  // 網址參數（診斷用）：?quality=low|medium|high 覆蓋畫質、?nolog=1 關閉對數深度緩衝、?diag=1 顯示 GPU 診斷
+  // 網址參數（診斷用）：?quality=low|medium|high 覆蓋畫質、?nolog=1 關閉對數深度緩衝、?diag=1 顯示 GPU 診斷、?safe=1 安全模式
   const params = new URLSearchParams(location.search);
   const quality = ['low', 'medium', 'high'].includes(params.get('quality')) ? params.get('quality') : detectQuality();
+  // 安全模式：關閉後處理（Bloom／電影後製）、對數深度與鏡頭呼吸，像素比 1；用來判斷黑屏閃爍是否來自這些功能
+  const safe = params.has('safe');
   let engine;
-  try { engine = new Engine(canvas, { quality, logDepth: !params.has('nolog') }); }
+  try { engine = new Engine(canvas, { quality, logDepth: !params.has('nolog') && !safe, post: !safe, maxPixelRatio: safe ? 1 : undefined }); }
   catch (e) { lmsg.textContent = '無法建立 WebGL 環境。請改用支援 WebGL2 的瀏覽器（Chrome / Edge / Firefox / Safari 16+）。'; report(String(e.message || e)); return; }
 
   const catalog = new Catalog();
@@ -68,12 +70,17 @@ async function boot() {
   if (isTouch) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠', 7000), 6000); }
 
   // 電影式偏好（localStorage）
-  let prefs = { cine: true, bars: false, breath: true, autohide: true };
+  // 尊重系統「減少動態效果」：預設關閉鏡頭呼吸與顆粒／色差（使用者仍可在設定開啟）
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  let prefs = { cine: !reduceMotion, bars: false, breath: !reduceMotion, autohide: true };
   try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem('ndf-cine') || '{}') }; } catch (e) { /* ignore */ }
   const savePrefs = () => { try { localStorage.setItem('ndf-cine', JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
   const applyPrefs = () => { engine.setCine(prefs.cine); engine.breath = prefs.breath; document.body.classList.toggle('cine', prefs.bars); if (!prefs.autohide) document.body.classList.remove('idle'); };
   engine.camera.fov = 50; engine.camera.updateProjectionMatrix();
+  if (safe) { prefs.breath = false; prefs.cine = false; }
   applyPrefs();
+  // 顯示晶片重置（記憶體不足等）：引擎已自動降級，向使用者說明；連續發生則建議安全模式
+  engine.onContextRestored = (level) => { ui.toast(level >= 2 ? '顯示晶片連續重置，已關閉泛光並降低解析度；若仍閃爍請在設定開啟「安全模式」' : '顯示晶片重置，已自動降低解析度以維持穩定', 7000); };
 
   // ---------------- 狀態 ----------------
   let currentEntry = null; let frameNote = ''; let jumping = false; let warp = false;
@@ -185,9 +192,15 @@ async function boot() {
 
   // 光速／躍遷視覺：放射狀星光拉絲（純視覺效果）
   const streaks = Array.from({ length: 220 }, () => ({ a: Math.random() * Math.PI * 2, r: Math.random(), l: 0.2 + Math.random() * 0.8 }));
+  let fxDirty = true;
   function drawFx(level, fade) {
+    // 沒有眩光、拉絲、淡黑時不重畫整張 2D 畫布（行動裝置每幀 clearRect 全螢幕很耗電）
+    const flareOn = engine.flare && prefs.cine && !engine.flareDisabled && engine.flare.intensity > 0.01;
+    const need = flareOn || level > 0.01 || fade > 0.005;
+    if (!need) { if (fxDirty) { fctx.clearRect(0, 0, fx.width, fx.height); fxDirty = false; } return; }
+    fxDirty = true;
     fctx.clearRect(0, 0, fx.width, fx.height);
-    if (engine.flare && prefs.cine && !engine.flareDisabled) drawFlare(engine.flare);
+    if (flareOn) drawFlare(engine.flare);
     if (level > 0.01) {
       const cx = fx.width / 2, cy = fx.height / 2, R = Math.hypot(cx, cy);
       fctx.fillStyle = `rgba(0,0,0,${0.3 * level})`; fctx.fillRect(0, 0, fx.width, fx.height);
@@ -285,7 +298,7 @@ async function boot() {
     else ui.toast('此裝置不支援全螢幕 API；iOS 可用 Safari「加入主畫面」取得全螢幕體驗');
   }
   ui.buildSettings({
-    quality, ...prefs,
+    quality, safe, ...prefs,
     onCine: (v) => { prefs.cine = v; savePrefs(); applyPrefs(); },
     onBars: (v) => { prefs.bars = v; savePrefs(); applyPrefs(); },
     onBreath: (v) => { prefs.breath = v; savePrefs(); applyPrefs(); },

@@ -131,6 +131,8 @@ export class UI {
     const row = (label, inner) => `<label><span>${label}</span>${inner}</label>`;
     s.innerHTML = `<h3>設定</h3>
       ${row('畫質', `<select id="s-quality"><option value="high">高</option><option value="medium">中</option><option value="low">低（手機）</option></select>`)}
+      ${row('安全模式（畫面閃爍或黑屏時：關閉泛光、後製、對數深度，像素比 1）', `<input type="checkbox" id="s-safe" ${opts.safe ? 'checked' : ''}>`)}
+      <div class="sub">安全模式與畫質切換會重新載入。仍有問題請開啟 <a href="?diag=1">GPU 診斷模式</a>，按「產生／複製報告」把內容貼給我們。</div>
       ${row('曝光', `<select id="s-exposure"><option value="auto">自動（靠近亮天體時星空變暗）</option><option value="stars">星空優先</option><option value="bodies">天體優先</option></select>`)}
       ${row('顯示天體標籤', `<input type="checkbox" id="s-labels" checked>`)}
       ${row('金星顯示 Magellan 雷達地形（非肉眼所見）', `<input type="checkbox" id="s-venus">`)}
@@ -155,6 +157,7 @@ export class UI {
     $('s-audio').value = 'ambient'; // 預設選曲，須使用者點擊播放才會發聲
     $('s-quality').value = opts.quality;
     $('s-quality').addEventListener('change', (e) => { localStorage.setItem('ndf-quality', e.target.value); location.reload(); });
+    $('s-safe').addEventListener('change', (e) => { const u = new URL(location.href); if (e.target.checked) u.searchParams.set('safe', '1'); else u.searchParams.delete('safe'); location.href = u.toString(); });
     $('s-exposure').addEventListener('change', (e) => opts.onExposure(e.target.value));
     $('s-labels').addEventListener('change', (e) => opts.onLabels(e.target.checked));
     $('s-venus').addEventListener('change', (e) => opts.onVenus(e.target.checked));
