@@ -210,3 +210,8 @@ body.settings-open #hud .info { visibility: hidden; }
   .controls button { min-height:36px; }
   .topright .icon { min-width:40px; min-height:44px; }
 }
+
+/* 音樂按鈕獨立於自動淡出的 HUD，確保首次進站也找得到播放入口。 */
+#btn-music { position:fixed; z-index:31; top:calc(72px + var(--sat)); right:calc(16px + var(--sar)); display:flex; align-items:center; justify-content:center; pointer-events:auto; }
+#btn-music:focus-visible { outline:2px solid #d8f0ff; outline-offset:3px; }
+@media(max-width:760px){ #btn-music { top:calc(70px + var(--sat)); right:calc(14px + var(--sar)); } }
