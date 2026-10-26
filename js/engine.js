@@ -233,7 +233,7 @@ export class Engine {
         mat = new THREE.ShaderMaterial({
           vertexShader: SH.PLANET_VERT, fragmentShader: SH.EARTH_FRAG,
           uniforms: { ...common, uDay: { value: this.textures[T.day] }, uNight: { value: this.textures[T.night] }, uBRC: { value: this.textures[T.brc] }, uNormal: { value: this.textures[T.normal] },
-            uCloudShift: { value: 0 }, uNightBoost: { value: 1.0 }, uAtmoColor: { value: new THREE.Color(...b.atmosphere.color) }, uHasRings: { value: 0 } },
+            uCloudShift: { value: 0 }, uNightBoost: { value: 1.0 }, uNormalStrength: { value: this.quality === 'high' ? 0.22 : 0.0 }, uAtmoColor: { value: new THREE.Color(...b.atmosphere.color) }, uHasRings: { value: 0 } },
         });
         if (!this.textures[T.day]) mat = this._fallbackMat(b, common);
       } else if (T.kind === 'sun') {
