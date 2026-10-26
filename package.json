@@ -1,7 +1,7 @@
 {
-  "name": "nic-deep-field",
+  "name": "arc-space",
   "private": true,
-  "description": "NIC Deep Field：第一人稱、真實比例、可自由飛行的網頁 3D 宇宙探索（測試版）",
+  "description": "ARC（原 NIC Deep Field）：第一人稱、真實比例、可自由飛行的網頁 3D 宇宙探索（測試版）",
   "scripts": {
     "start": "node server.js",
     "build:data": "python3 -I tools/build_data.py --hyg ../../astronexus/hyg-database --ngc ../../mattiaverga/openngc --oec ../../openexoplanetcatalogue/oec_tables --out data",
