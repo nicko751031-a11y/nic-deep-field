@@ -137,6 +137,14 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - 尚未驗證：iPhone Safari GPU、完整桌面與手機回歸、真實 FPS、音樂正常啟動；不得宣稱全部問題修復或品質滿分。
 
 
+## 對數深度片段編譯錯誤修正與 GPU 診斷模式（2026-10-27，Claude QA）
+
+- **發現**：main `f2faced` 加入的 `<logdepthbuf_vertex>` 需要 `<common>` 片段裡的 `isPerspectiveMatrix()`，`PLANET_VERT`／`ATMO_VERT` 未包含 → 頂點著色器編譯失敗（`'isPerspectiveMatrix' : no matching overloaded function found`），所有行星與大氣不繪製；無頭 Chromium 開場畫面只剩星空與眩光。
+- **修正**：`PLANET_VERT`、`ATMO_VERT`、`RING_VERT`、`SUN_VERT` 加 `#include <common>`；`RING_*`、`SUN_*` 補齊四個 `logdepthbuf_*` 片段，讓行星、大氣、星環、主星的深度一致（否則星環在行星前方的段落會被行星蓋掉）。修正後 shader 錯誤 0。
+- **GPU 診斷模式**：網址加 `?diag=1`，左上角顯示 GPU 名稱、WebGL 版本、深度位元、貼圖上限、fragment highp／mediump 精度、像素比、FPS（含最低）、繪製次數、三角形數、貼圖數、shader／console 錯誤、context lost 次數；可逐項關閉電影後製、Bloom、地球法線貼圖、大氣殼、鏡頭呼吸、各向異性過濾、眩光，切換像素比 1，重載切換對數深度（`?nolog=1`）與畫質（`?quality=low|medium|high`）；「產生／複製報告」輸出 JSON。
+- **iPhone 黑色多邊形排查流程（請負責人在真機執行）**：開 `https://…/?diag=1` → 前往地球 → 依序按「地球法線貼圖」「電影後製」「Bloom」「大氣殼」「各向異性過濾」「像素比 1」「關閉對數深度（重載）」「畫質 low／high（重載）」，每按一項看黑色多邊形是否消失，再按「產生／複製報告」把 JSON 貼到 Issue #8。報告裡的 `renderer`、`depthBits`、`fragHighp`、`shaderErrors` 是定位關鍵。
+- 無頭 Chromium 回歸（含 `60-diag` 截圖與報告摘要）見本次 log；真機仍未測。
+
 ## ARC 地球深度與巨物尺度（2026-10-27，候選修正，未部署）
 
 - 根據 iPhone 錄影仍可見地球表面不規則黑色多邊形；原因尚未經 GPU 偵錯確認。
