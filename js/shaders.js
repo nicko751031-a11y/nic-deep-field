@@ -98,6 +98,7 @@ export const EARTH_FRAG = /* glsl */`
   uniform float uCloudShift;   // 雲層相對地表的經度位移（弧度換算到 uv）
   uniform float uDetail;
   uniform float uNightBoost;
+  uniform float uNormalStrength;
   uniform vec3 uAtmoColor;
   uniform float uHasRings; // 不用，保持介面一致
   float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -110,7 +111,7 @@ export const EARTH_FRAG = /* glsl */`
     // 法線貼圖（切線框架由球面參數推得）
     vec3 pn = normalize(vObjPos);
     vec3 nm = texture2D(uNormal, vUv).xyz * 2.0 - 1.0;
-    vec3 nWorld = normalize(n + (normalize(vTangent) * nm.x + normalize(vBitangent) * nm.y) * 0.35);
+    vec3 nWorld = normalize(n + (normalize(vTangent) * nm.x + normalize(vBitangent) * nm.y) * uNormalStrength);
     vec3 day = texture2D(uDay, vUv).rgb;
     vec3 brc = texture2D(uBRC, vUv).rgb;         // R 高度、G 粗糙度、B 雲
     vec3 night = texture2D(uNight, vUv).rgb;
