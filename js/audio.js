@@ -65,7 +65,7 @@ export class SpaceAudio {
     const duration = 16, start = ctx.currentTime + 0.06;
     // 預先排程有限時長的和弦循環，不使用計時器或外部音訊請求。
     // 每次循環 64 秒，WebAudio 原生 loop 音訊緩衝可無縫銜接。
-    const sampleRate = ctx.sampleRate, seconds = duration * chords.length;
+    const sampleRate = Math.min(ctx.sampleRate, 22050), seconds = duration * chords.length; // 降低 iPhone 長循環音訊記憶體負擔
     const buffer = ctx.createBuffer(2, Math.floor(sampleRate * seconds), sampleRate);
     const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
     const phases = chords.map(c => c.map((_,i) => (i + 1) * 0.37));
