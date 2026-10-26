@@ -4,6 +4,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { AU_KM, PC_KM, R_SUN_KM, R_JUP_KM, R_EARTH_KM, G_SI, M_SUN_KG, C_KM_S, clamp, lerp } from './units.js';
 import * as ASTRO from './astro.js';
 import { BODIES, BODY_BY_KEY } from './bodies.js';
@@ -59,6 +60,8 @@ export class Engine {
     this.frameOriginKm = [0, 0, 0];
     this.renderScale = 1; // 每個渲染單位代表的公里數（遠距 frame 放大以避免 GPU 精度問題）
     this.anchorKey = null; this.prevAnchorPos = null; // 相機錨定的天體：天體移動時相機跟著移動
+    this.breath = true;   // 鏡頭呼吸：極小幅度的緩慢擺動（只影響渲染用相機，不影響飛行狀態）
+    this.flare = null;    // 鏡頭眩光來源（太陽／主星）：{ x, y, intensity, angR } 或 null
 
     this.segments = quality === 'high' ? 128 : quality === 'medium' ? 80 : 48;
     this._initPost();
@@ -79,10 +82,21 @@ export class Engine {
     this.composer.addPass(this.renderPass);
     this.useBloom = this.quality !== 'low';
     if (this.useBloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.36, 1.18);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.75, 0.65, 1.0);
       this.composer.addPass(this.bloom);
     }
     this.composer.addPass(new OutputPass());
+    // 電影式後處理（色差、調色、暗角、顆粒）
+    this.cine = new ShaderPass(new THREE.ShaderMaterial({
+      vertexShader: SH.CINE_VERT, fragmentShader: SH.CINE_FRAG,
+      uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 0.045 }, uVignette: { value: 0.45 }, uAberration: { value: 0.012 }, uGrade: { value: 1.0 }, uRes: { value: new THREE.Vector2(size.x, size.y) } },
+    }));
+    this.composer.addPass(this.cine);
+    this.setCine(true);
+  }
+  setCine(on) {
+    this.cineOn = on; const u = this.cine.material.uniforms;
+    u.uGrain.value = on ? (this.quality === 'low' ? 0 : 0.025) : 0; u.uVignette.value = on ? 0.32 : 0; u.uAberration.value = on ? (this.quality === 'low' ? 0 : 0.003) : 0; u.uGrade.value = on ? 1 : 0;
   }
 
   resize() {
@@ -92,6 +106,7 @@ export class Engine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.width = w; this.height = h;
+    if (this.cine) this.cine.material.uniforms.uRes.value.set(w * this.renderer.getPixelRatio(), h * this.renderer.getPixelRatio());
   }
 
   // ------------------------------------------------------------- 天空（Tycho 星圖 + HYG 星點）
@@ -112,7 +127,7 @@ export class Engine {
       vertexShader: SH.SKY_VERT, fragmentShader: SH.BH_FRAG,
       uniforms: {
         uCamPos: { value: new V3(0, 0, 30) }, uSky: { value: null }, uSkyIntensity: { value: 1.0 },
-        uDiskInner: { value: 3.0 }, uDiskOuter: { value: 11.0 }, uTime: { value: 0 }, uSteps: { value: this.quality === 'high' ? 900 : this.quality === 'medium' ? 600 : 380 },
+        uDiskInner: { value: 3.0 }, uDiskOuter: { value: 14.0 }, uTime: { value: 0 }, uSteps: { value: this.quality === 'high' ? 900 : this.quality === 'medium' ? 600 : 380 },
         uDiskOn: { value: 1 }, uDiskNormal: { value: new V3(0, 1, 0) },
         uInvProj: { value: new THREE.Matrix4() }, uInvView: { value: new THREE.Matrix4() },
       }, depthTest: false, depthWrite: false,
@@ -429,6 +444,12 @@ export class Engine {
     const jd = ASTRO.jdFromDate(new Date(this.simTime));
     const cam = this.camPos;
     this.camera.quaternion.copy(this.camQuat);
+    if (this.breath) {
+      // 鏡頭呼吸：三個不可通約週期的極小擺動（約 0.05°），只作用在渲染相機
+      const t = this.elapsed; const a = 0.0009;
+      const bq = new THREE.Quaternion().setFromEuler(new THREE.Euler(a * Math.sin(t * 0.53) + a * 0.5 * Math.sin(t * 1.37), a * Math.sin(t * 0.41 + 1.3) + a * 0.5 * Math.sin(t * 1.11), a * 0.4 * Math.sin(t * 0.29)));
+      this.camera.quaternion.multiply(bq);
+    }
     this.camera.updateMatrixWorld();
     // 天空矩陣
     this.camera.updateProjectionMatrix();
@@ -513,6 +534,7 @@ export class Engine {
     });
     this.bodyPointPos.needsUpdate = true; this.bodyPointMag.needsUpdate = true;
     this.sunDirWorld.copy(sunRel).normalize();
+    this.flare = this._computeFlare(sunRel, BODY_BY_KEY.sun.radius, [...this.bodies.values()].filter((e) => e.def.key !== 'sun').map((e) => ({ rel: e.group.position, radius: e.def.radius })));
     // 地球標記
     if (this.markerSprite) {
       const em = this.earthMarker, e = this.bodies.get('earth');
@@ -525,6 +547,27 @@ export class Engine {
       } else this.markerSprite.visible = false;
     }
     return nearest;
+  }
+
+  // 鏡頭眩光來源：光源的螢幕位置與強度；被其他天體遮住時依「光源角半徑 vs 邊緣距離」平滑消失（日出／日落時從邊緣露出）
+  _computeFlare(srcRel, srcRadius, occluders) {
+    const dist = srcRel.length(); if (!(dist > 0)) return null;
+    const p = this.project(srcRel); if (!p) return null;
+    const dir = srcRel.clone().divideScalar(dist);
+    const angR = Math.atan2(srcRadius, dist);
+    let vis = 1;
+    for (const o of occluders) {
+      const t = o.rel.dot(dir); if (t <= 0 || t >= dist) continue;
+      const perp = o.rel.clone().addScaledVector(dir, -t).length();
+      const srcR = angR * t; // 光源在遮蔽者距離處的投影半徑
+      vis *= clamp((perp - (o.radius - srcR)) / Math.max(2 * srcR, 1e-9), 0, 1);
+      if (vis <= 0) return null;
+    }
+    // 螢幕外 15% 以上就不畫；視野佔比太大（極近）時減弱，避免整片眩光
+    const ex = Math.max(-p.x, p.x - this.width, 0) / this.width, ey = Math.max(-p.y, p.y - this.height, 0) / this.height;
+    const edge = 1 - clamp(Math.max(ex, ey) / 0.15, 0, 1); if (edge <= 0) return null;
+    const size = clamp(angR / 0.004, 0.35, 1) * (1 - clamp((angR - 0.25) / 0.4, 0, 1));
+    return { x: p.x, y: p.y, intensity: vis * edge * size * this.bodyExposure, angR };
   }
 
   _applyAnchor(pos) {
@@ -574,6 +617,7 @@ export class Engine {
       const bound = e.radius + e.minAltitude;
       if (!nearest || dist - bound < nearest.distToBoundary) nearest = { key: e.key, def: { zh: e.zh, radius: e.radius, minAltitude: e.minAltitude, key: e.key }, dist, distToBoundary: dist - bound, altitude: dist - e.radius, rel, radius: e.radius, bound, pos: e.pos, extra: e };
     }
+    this.flare = star ? this._computeFlare(new V3(-cam[0], -cam[1], -cam[2]), star.radius, this.extraBodies.filter((e) => e.mesh && !e.isStar && !e.isDso).map((e) => ({ rel: e.group.position.clone().multiplyScalar(this.renderScale), radius: e.radius }))) : null;
     return nearest;
   }
 
@@ -583,7 +627,7 @@ export class Engine {
     this.bhMat.uniforms.uCamPos.value.set(cam[0] / rs, cam[1] / rs, cam[2] / rs);
     this.bhMat.uniforms.uTime.value = this.elapsed;
     this.bhMat.uniforms.uSkyIntensity.value = 1.2 * this.starExposure;
-    this.labelTargets = [];
+    this.labelTargets = []; this.flare = null;
     const e = this.extraBodies[0];
     const bound = rs * 1.3;
     return { key: 'bh', def: { zh: e.zh, radius: rs, minAltitude: bound - rs, key: 'bh' }, dist, distToBoundary: dist - bound, altitude: dist - rs, rel: new V3(-cam[0], -cam[1], -cam[2]), radius: rs, bound, pos: [0, 0, 0], extra: e };
@@ -614,15 +658,16 @@ export class Engine {
     this.starMat.uniforms.uExposure.value = this.starExposure;
     this.skyMat.uniforms.uIntensity.value = 0.55 * this.starExposure;
     this.coverage = coverage;
-    // 依鄰近天體視角大小微調光暈；不改變天文資料及光照來源。
+    // 依鄰近天體視角大小微調光暈（遠離時 0.75、貼近受光天體時 0.45，避免行星邊緣過度泛光）；不改變天文資料及光照來源。
     if (this.bloom) {
-      const target = 0.38 + 0.16 * Math.sqrt(coverage);
+      const target = 0.75 - 0.3 * Math.sqrt(coverage);
       this.bloom.strength = lerp(this.bloom.strength, target, 0.045);
     }
   }
 
   render() {
-    if (this.useBloom) this.composer.render(); else this.renderer.render(this.scene, this.camera);
+    this.cine.material.uniforms.uTime.value = this.elapsed;
+    this.composer.render();
   }
 
   // 投影到螢幕（給 HTML 標籤）
