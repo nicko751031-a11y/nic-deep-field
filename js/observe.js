@@ -23,7 +23,7 @@ const pad = (n) => String(n).padStart(2, '0');
 // ---- 來源定義 ----------------------------------------------------------------
 export const SOURCES = [
   {
-    id: 'sdo171', group: 'sun', title: 'SDO AIA 171 Å（日冕，約 100 萬 K）', kind: 'nrt', provider: 'NASA Solar Dynamics Observatory（GSFC）',
+    id: 'sdo171', home: 'https://sdo.gsfc.nasa.gov/data/', group: 'sun', title: 'SDO AIA 171 Å（日冕，約 100 萬 K）', kind: 'nrt', provider: 'NASA Solar Dynamics Observatory（GSFC）',
     cadence: '約每 15 分鐘更新一張「最新」影像', timeSource: 'Helioviewer API（getClosestImage，sourceId 10）',
     async run() {
       const img = `https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0171.jpg?x=${Date.now()}`;
@@ -32,7 +32,7 @@ export const SOURCES = [
     },
   },
   {
-    id: 'sdo304', group: 'sun', title: 'SDO AIA 304 Å（色球／過渡區）', kind: 'nrt', provider: 'NASA SDO（GSFC）', cadence: '約每 15 分鐘', timeSource: 'Helioviewer API（sourceId 13）',
+    id: 'sdo304', home: 'https://sdo.gsfc.nasa.gov/data/', group: 'sun', title: 'SDO AIA 304 Å（色球／過渡區）', kind: 'nrt', provider: 'NASA SDO（GSFC）', cadence: '約每 15 分鐘', timeSource: 'Helioviewer API（sourceId 13）',
     async run() {
       const img = `https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0304.jpg?x=${Date.now()}`;
       const meta = await safe(() => fetchJson(`https://api.helioviewer.org/v2/getClosestImage/?date=${new Date().toISOString()}&sourceId=13`));
@@ -40,7 +40,7 @@ export const SOURCES = [
     },
   },
   {
-    id: 'hmi', group: 'sun', title: 'SDO HMI 連續譜（可見光光球，黑子）', kind: 'nrt', provider: 'NASA SDO（GSFC）', cadence: '約每 15 分鐘', timeSource: 'Helioviewer API（sourceId 18）',
+    id: 'hmi', home: 'https://sdo.gsfc.nasa.gov/data/', group: 'sun', title: 'SDO HMI 連續譜（可見光光球，黑子）', kind: 'nrt', provider: 'NASA SDO（GSFC）', cadence: '約每 15 分鐘', timeSource: 'Helioviewer API（sourceId 18）',
     async run() {
       const img = `https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMIIC.jpg?x=${Date.now()}`;
       const meta = await safe(() => fetchJson(`https://api.helioviewer.org/v2/getClosestImage/?date=${new Date().toISOString()}&sourceId=18`));
@@ -48,19 +48,19 @@ export const SOURCES = [
     },
   },
   {
-    id: 'lascoc2', group: 'sun', title: 'SOHO LASCO C2 日冕儀（日冕物質拋射）', kind: 'nrt', provider: 'ESA/NASA SOHO', cadence: '約每 12 分鐘拍攝，網站約每小時更新', timeSource: '影像右下角內嵌的 UTC 時間戳（本站無法機器讀取）',
+    id: 'lascoc2', home: 'https://soho.nascom.nasa.gov/data/realtime-images.html', group: 'sun', title: 'SOHO LASCO C2 日冕儀（日冕物質拋射）', kind: 'nrt', provider: 'ESA/NASA SOHO', cadence: '約每 12 分鐘拍攝，網站約每小時更新', timeSource: '影像右下角內嵌的 UTC 時間戳（本站無法機器讀取）',
     async run() {
       return { imageUrl: `https://soho.nascom.nasa.gov/data/realtime/c2/512/latest.jpg?x=${Date.now()}`, captured: null, timeNote: '拍攝時間請看影像內嵌時間戳（UTC）；本站無法取得機器可讀時間', credit: 'ESA/NASA SOHO/LASCO' };
     },
   },
   {
-    id: 'goes', group: 'earth', title: 'GOES-East 全盤 GeoColor（西半球）', kind: 'nrt', provider: 'NOAA NESDIS STAR', cadence: '每 10 分鐘', timeSource: '影像底部內嵌 UTC 時間戳',
+    id: 'goes', home: 'https://www.star.nesdis.noaa.gov/GOES/fulldisk.php?sat=G19', group: 'earth', title: 'GOES-East 全盤 GeoColor（西半球）', kind: 'nrt', provider: 'NOAA NESDIS STAR', cadence: '每 10 分鐘', timeSource: '影像底部內嵌 UTC 時間戳',
     async run() {
       return { imageUrl: `https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/1808x1808.jpg?x=${Date.now()}`, captured: null, timeNote: '拍攝時間請看影像底部黑條（UTC）；GeoColor 夜側為 NOAA 以紅外線＋靜態城市燈光合成，非真實夜間可見光', credit: 'NOAA/NESDIS/STAR' };
     },
   },
   {
-    id: 'himawari', group: 'earth', title: 'Himawari-9 全盤真彩（東亞／台灣上空）', kind: 'nrt', provider: 'JMA 氣象衛星，影像由日本 NICT 提供', cadence: '每 10 分鐘', timeSource: 'NICT latest.json 的拍攝時間',
+    id: 'himawari', home: 'https://himawari8.nict.go.jp/', group: 'earth', title: 'Himawari-9 全盤真彩（東亞／台灣上空）', kind: 'nrt', provider: 'JMA 氣象衛星，影像由日本 NICT 提供', cadence: '每 10 分鐘', timeSource: 'NICT latest.json 的拍攝時間',
     async run() {
       const meta = await fetchJson(`https://himawari8.nict.go.jp/img/D531106/latest.json?x=${Date.now()}`);
       // date 格式 "YYYY-MM-DD HH:MM:SS"（UTC）
@@ -70,7 +70,7 @@ export const SOURCES = [
     },
   },
   {
-    id: 'epic', group: 'earth', title: 'DSCOVR EPIC 全日照地球（距地 150 萬 km）', kind: 'archive', provider: 'NASA EPIC（GSFC）', cadence: '每日數張，通常延遲 1–3 天發布', timeSource: 'EPIC API 的影像時間',
+    id: 'epic', home: 'https://epic.gsfc.nasa.gov/', group: 'earth', title: 'DSCOVR EPIC 全日照地球（距地 150 萬 km）', kind: 'archive', provider: 'NASA EPIC（GSFC）', cadence: '每日數張，通常延遲 1–3 天發布', timeSource: 'EPIC API 的影像時間',
     async run() {
       const list = await fetchJson(`https://epic.gsfc.nasa.gov/api/natural?x=${Date.now()}`);
       if (!Array.isArray(list) || !list.length) throw new Error('EPIC API 無資料');
@@ -138,7 +138,7 @@ export class ObservePanel {
         <dt>本機最後成功載入</dt><dd class="loaded">—（這不是拍攝時間）</dd>
         <dt>狀態</dt><dd class="st">載入中</dd>
       </dl>
-      <div class="obs-actions"><button class="refresh">重新讀取</button><a class="open" target="_blank" rel="noopener">在新分頁開啟原始影像</a></div>`;
+      <div class="obs-actions"><button class="refresh">重新讀取</button><a class="open" target="_blank" rel="noopener" href="${src.home}">在新分頁開啟原始影像</a><a target="_blank" rel="noopener" href="${src.home}">官方來源頁</a></div>`;
     const run = async () => {
       const imgBox = el.querySelector('.obs-img'); const st = el.querySelector('.st'); const cap = el.querySelector('.cap'); const lag = el.querySelector('.lag'); const loaded = el.querySelector('.loaded');
       imgBox.innerHTML = '<div class="obs-status">載入中…</div>'; st.textContent = '載入中'; st.className = 'st';
@@ -175,7 +175,7 @@ export class ObservePanel {
         <dt>速度</dt><dd class="vel">—</dd>
         <dt>狀態</dt><dd class="st">載入中</dd>
       </dl>
-      <div class="obs-actions"><button class="refresh">重新讀取</button><button class="mark">在 3D 地球上標示並前往</button></div>
+      <div class="obs-actions"><button class="refresh">重新讀取</button><button class="mark">在 3D 地球上標示並前往</button><a target="_blank" rel="noopener" href="https://wheretheiss.at/">官方來源頁</a></div>
       <div class="obs-tile-head" style="margin-top:14px"><span class="badge badge-live">直播（外部連結）</span><b>NASA 官方直播</b></div>
       <div class="obs-note">太空站的即時影像由 NASA 透過 YouTube／NASA+ 直播，本站不嵌入、不轉播，以免把舊錄影誤當直播。是否正在播出、播的是不是太空站鏡頭、延遲多少，皆由 NASA 決定，本站無法判定。</div>
       <div class="obs-actions">

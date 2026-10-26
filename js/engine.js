@@ -26,10 +26,17 @@ function bbColor(T) { // 黑體近似色（線性空間近似）
 export function bvToTemp(bv) { return 4600 * (1 / (0.92 * bv + 1.7) + 1 / (0.92 * bv + 0.62)); }
 
 export class Engine {
-  constructor(canvas, { quality = 'high' } = {}) {
+  constructor(canvas, { quality = 'high', logDepth = true } = {}) {
     this.canvas = canvas;
     this.quality = quality;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', logarithmicDepthBuffer: logDepth, powerPreference: 'high-performance' });
+    // shader 編譯／連結錯誤：保留摘要供診斷模式顯示（仍照常輸出到 console）
+    this.shaderErrors = [];
+    this.renderer.debug.onShaderError = (gl, program, vs, fs) => {
+      const msg = `${gl.getProgramInfoLog(program) || ''} | VS: ${(gl.getShaderInfoLog(vs) || '').trim()} | FS: ${(gl.getShaderInfoLog(fs) || '').trim()}`.replace(/\s+/g, ' ');
+      this.shaderErrors.push(msg.slice(0, 600));
+      console.error('THREE.WebGLProgram: Shader Error', msg);
+    };
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2 : 1.25));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -667,6 +674,7 @@ export class Engine {
 
   render() {
     this.cine.material.uniforms.uTime.value = this.elapsed;
+    this.renderer.info.autoReset = false; this.renderer.info.reset(); // 讓 info 統計整個 composer 幀（多個 pass），供診斷模式讀取
     this.composer.render();
   }
 

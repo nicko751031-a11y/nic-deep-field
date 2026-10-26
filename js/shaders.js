@@ -12,6 +12,7 @@ export const PLANET_VERT = /* glsl */`
   varying vec3 vObjPos;
   varying vec3 vTangent; varying vec3 vBitangent;
   uniform float uUOffset;
+  #include <common>
   #include <logdepthbuf_pars_vertex>
   void main() {
     vUv = vec2(uv.x + uUOffset, uv.y); // 不用 fract，交給 RepeatWrapping，避免接縫線
@@ -167,6 +168,7 @@ export const EARTH_FRAG = /* glsl */`
 // 大氣殼：以弦長近似的單次散射（FrontSide、加法混合）
 export const ATMO_VERT = /* glsl */`
   varying vec3 vWorldPos;
+  #include <common>
   #include <logdepthbuf_pars_vertex>
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -220,14 +222,21 @@ export const ATMO_FRAG = /* glsl */`
 
 export const RING_VERT = /* glsl */`
   varying vec3 vWorldPos; varying vec3 vLocal;
-  void main() { vLocal = position; vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPos = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }
+  #include <common>
+  #include <logdepthbuf_pars_vertex>
+  void main() {
+    vLocal = position; vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPos = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp;
+    #include <logdepthbuf_vertex>
+  }
 `;
 export const RING_FRAG = /* glsl */`
   precision highp float;
+  #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos; varying vec3 vLocal;
   uniform sampler2D uRingMap; uniform float uInner, uOuter, uRp;
   uniform vec3 uSunDir; uniform vec3 uCenter; uniform vec3 uNormal; uniform float uSunIntensity; uniform float uFaint;
   void main() {
+    #include <logdepthbuf_fragment>
     float r = length(vLocal.xy);
     float t = (r - uInner) / (uOuter - uInner);
     if (t < 0.0 || t > 1.0) discard;
@@ -255,10 +264,16 @@ export const RING_FRAG = /* glsl */`
 
 export const SUN_VERT = /* glsl */`
   varying vec3 vObj; varying vec3 vNormal; varying vec3 vWorldPos;
-  void main() { vObj = position; vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPos = wp.xyz; vNormal = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * wp; }
+  #include <common>
+  #include <logdepthbuf_pars_vertex>
+  void main() {
+    vObj = position; vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPos = wp.xyz; vNormal = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * wp;
+    #include <logdepthbuf_vertex>
+  }
 `;
 export const SUN_FRAG = /* glsl */`
   precision highp float;
+  #include <logdepthbuf_pars_fragment>
   varying vec3 vObj; varying vec3 vNormal; varying vec3 vWorldPos;
   uniform float uTime; uniform float uIntensity;
   float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -267,6 +282,7 @@ export const SUN_FRAG = /* glsl */`
                mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z); }
   float fbm(vec3 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * noise3(p); p = p * 2.03 + 11.0; a *= 0.5; } return s; }
   void main() {
+    #include <logdepthbuf_fragment>
     vec3 p = normalize(vObj);
     float g = fbm(p * 60.0 + uTime * 0.02) * 0.6 + fbm(p * 220.0 - uTime * 0.05) * 0.4;   // 米粒組織
     float spots = smoothstep(0.62, 0.72, fbm(p * 6.0 + 3.0)) * smoothstep(0.3, 0.9, fbm(p * 25.0 + 7.0)); // 偶發黑子（示意）

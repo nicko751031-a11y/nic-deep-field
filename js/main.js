@@ -27,9 +27,11 @@ async function boot() {
   window.addEventListener('error', (e) => { if (errors.length < 8) report(`錯誤：${e.message}`); });
   window.addEventListener('unhandledrejection', (e) => { if (errors.length < 8) report(`錯誤：${e.reason?.message || e.reason}`); });
 
-  const quality = detectQuality();
+  // 網址參數（診斷用）：?quality=low|medium|high 覆蓋畫質、?nolog=1 關閉對數深度緩衝、?diag=1 顯示 GPU 診斷
+  const params = new URLSearchParams(location.search);
+  const quality = ['low', 'medium', 'high'].includes(params.get('quality')) ? params.get('quality') : detectQuality();
   let engine;
-  try { engine = new Engine(canvas, { quality }); }
+  try { engine = new Engine(canvas, { quality, logDepth: !params.has('nolog') }); }
   catch (e) { lmsg.textContent = '無法建立 WebGL 環境。請改用支援 WebGL2 的瀏覽器（Chrome / Edge / Firefox / Safari 16+）。'; report(String(e.message || e)); return; }
 
   const catalog = new Catalog();
@@ -185,7 +187,7 @@ async function boot() {
   const streaks = Array.from({ length: 220 }, () => ({ a: Math.random() * Math.PI * 2, r: Math.random(), l: 0.2 + Math.random() * 0.8 }));
   function drawFx(level, fade) {
     fctx.clearRect(0, 0, fx.width, fx.height);
-    if (engine.flare && prefs.cine) drawFlare(engine.flare);
+    if (engine.flare && prefs.cine && !engine.flareDisabled) drawFlare(engine.flare);
     if (level > 0.01) {
       const cx = fx.width / 2, cy = fx.height / 2, R = Math.hypot(cx, cy);
       fctx.fillStyle = `rgba(0,0,0,${0.3 * level})`; fctx.fillRect(0, 0, fx.width, fx.height);
@@ -299,6 +301,7 @@ async function boot() {
 
 
   // 測試鉤子（瀏覽器自動化用）
+  if (params.has('diag')) import('./diag.js').then((m) => m.initDiag(engine, controls, { quality })).catch((e) => console.error('診斷模式載入失敗', e));
   window.__ndf = {
     engine, controls, catalog, goTo,
     testPlaceOver(lat, lon, altKm) {
