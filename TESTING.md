@@ -135,3 +135,11 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - ARC 原創配樂：緩衝取樣率上限 22,050 Hz，以降低長音訊緩衝記憶體用量；需測試 iPhone 音訊音質與循環。
 - 音樂按鈕移出會自動淡出的 HUD，保持可見；仍預設靜音，須使用者點擊啟動。
 - 尚未驗證：iPhone Safari GPU、完整桌面與手機回歸、真實 FPS、音樂正常啟動；不得宣稱全部問題修復或品質滿分。
+
+
+## ARC 地球深度與巨物尺度（2026-10-27，候選修正，未部署）
+
+- 根據 iPhone 錄影仍可見地球表面不規則黑色多邊形；原因尚未經 GPU 偵錯確認。
+- 已在 `PLANET_VERT`、`PLANET_FRAG`、`EARTH_FRAG`、`ATMO_VERT`、`ATMO_FRAG` 補上 three.js 對數深度緩衝的標準 shader chunks，讓自訂 ShaderMaterial 與既有 `logarithmicDepthBuffer` 設定一致。此為深度精度風險修正，不能宣稱必然解決破圖。
+- 待驗證：GLSL 編譯、iPhone Safari 真機黑色多邊形、地球與大氣遮擋關係、土星環、黑洞及深空 frame 的相容性。
+- 近距離地球貼圖仍為 4096px NASA 歷史合成影像，尚未導入分塊高解析度 LOD；不得宣稱已具備真實地形細節。
