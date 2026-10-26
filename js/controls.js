@@ -29,6 +29,8 @@ export class Controls {
     this.pointerLocked = false;
     this.dragging = false;
     this.onUserMove = null;
+    this.lookPending = { x: 0, y: 0 }; // 環視平滑：輸入先累積，再以指數衰減逐幀套用（鏡頭有重量感、無抖動）
+    this.lookSmooth = 14;
     this._bind();
   }
 
@@ -119,7 +121,7 @@ export class Controls {
   }
   setAutoSpeed(on) { this.autoSpeed = on; this.onSpeedChange?.(); }
   stop() { this.velocity.set(0, 0, 0); this.orbit = null; this.approach = 0; this.onStop?.(); }
-  setOrbit(key, on = true) { this.orbit = on && key ? { key, omega: 2 * Math.PI / 90 } : null; if (on) this.velocity.set(0, 0, 0); }
+  setOrbit(key, on = true, periodSec = 150) { this.orbit = on && key ? { key, omega: 2 * Math.PI / periodSec } : null; if (on) this.velocity.set(0, 0, 0); }
 
   // 把相機朝向 target（up 為「上」方向，例如天體北極）
   lookAt(relTarget, up = new V3(0, 1, 0)) {
@@ -128,11 +130,16 @@ export class Controls {
   }
 
   update(dt, nearest) {
-    if (!this.enabled) { this.lookDelta.x = 0; this.lookDelta.y = 0; return; }
+    if (!this.enabled) { this.lookDelta.x = 0; this.lookDelta.y = 0; this.lookPending.x = 0; this.lookPending.y = 0; return; }
     const eng = this.engine; const q = eng.camQuat;
-    // ---- 環視
-    const yaw = -this.lookDelta.x * this.sensitivity, pitch = -this.lookDelta.y * this.sensitivity * (this.invertY ? -1 : 1);
+    // ---- 環視（平滑）
+    this.lookPending.x += this.lookDelta.x; this.lookPending.y += this.lookDelta.y;
     this.lookDelta.x = 0; this.lookDelta.y = 0;
+    const kl = this.lookSmooth > 0 ? 1 - Math.exp(-dt * this.lookSmooth) : 1;
+    const ax = this.lookPending.x * kl, ay = this.lookPending.y * kl;
+    this.lookPending.x -= ax; this.lookPending.y -= ay;
+    if (Math.abs(this.lookPending.x) < 0.01) this.lookPending.x = 0; if (Math.abs(this.lookPending.y) < 0.01) this.lookPending.y = 0;
+    const yaw = -ax * this.sensitivity, pitch = -ay * this.sensitivity * (this.invertY ? -1 : 1);
     let roll = 0;
     if (this.keys.has('KeyQ')) roll += 1.2 * dt; if (this.keys.has('KeyE')) roll -= 1.2 * dt;
     if (this.keys.has('ArrowLeft')) this._yawPitch(q, 1.3 * dt, 0); if (this.keys.has('ArrowRight')) this._yawPitch(q, -1.3 * dt, 0);
