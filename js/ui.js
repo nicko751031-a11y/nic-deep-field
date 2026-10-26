@@ -10,6 +10,14 @@ export class UI {
     this.hud = $('hud'); this.restore = $('restore'); this.info = $('info'); this.status = $('status'); this.results = $('results'); this.q = $('q');
     this.toastEl = $('toast'); this.settings = $('settings'); this.labels = $('labels');
     this.hidden = false; this.selIndex = -1; this.lastResults = [];
+    // 電影沉浸模式只改變 HUD 透明度與排版，不影響資料標示或物理運算。
+    const cinema = document.getElementById('btn-cinema');
+    const applyCinema = (enabled) => {
+      document.body.classList.toggle('cinematic', enabled);
+      if (cinema) { cinema.setAttribute('aria-pressed', String(enabled)); cinema.title = enabled ? '關閉電影沉浸模式' : '開啟電影沉浸模式'; }
+    };
+    applyCinema(true);
+    cinema?.addEventListener('click', () => applyCinema(!document.body.classList.contains('cinematic')));
     this.labelEls = new Map();
   }
 
