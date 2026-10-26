@@ -12,6 +12,7 @@ export const PLANET_VERT = /* glsl */`
   varying vec3 vObjPos;
   varying vec3 vTangent; varying vec3 vBitangent;
   uniform float uUOffset;
+  #include <logdepthbuf_pars_vertex>
   void main() {
     vUv = vec2(uv.x + uUOffset, uv.y); // 不用 fract，交給 RepeatWrapping，避免接縫線
     vObjPos = position;
@@ -25,6 +26,7 @@ export const PLANET_VERT = /* glsl */`
     vTangent = normalize(mat3(modelMatrix) * t);
     vBitangent = normalize(mat3(modelMatrix) * cross(pn, t));
     gl_Position = projectionMatrix * viewMatrix * wp;
+    #include <logdepthbuf_vertex>
   }
 `;
 
@@ -52,6 +54,7 @@ const RING_SHADOW_FN = /* glsl */`
 
 export const PLANET_FRAG = /* glsl */`
   precision highp float;
+  #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos; varying vec3 vNormal; varying vec2 vUv; varying vec3 vObjPos;
   uniform sampler2D uMap;
   uniform float uHasMap;
@@ -67,6 +70,7 @@ export const PLANET_FRAG = /* glsl */`
     return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
                mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z); }
   void main() {
+    #include <logdepthbuf_fragment>
     vec3 n = normalize(vNormal);
     vec3 v = normalize(-vWorldPos);
     vec3 albedo = uHasMap > 0.5 ? texture2D(uMap, vUv).rgb : uColor;
@@ -93,6 +97,7 @@ export const PLANET_FRAG = /* glsl */`
 
 export const EARTH_FRAG = /* glsl */`
   precision highp float;
+  #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos; varying vec3 vNormal; varying vec2 vUv; varying vec3 vObjPos;
   varying vec3 vTangent; varying vec3 vBitangent;
   uniform sampler2D uDay, uNight, uBRC, uNormal;
@@ -108,6 +113,7 @@ export const EARTH_FRAG = /* glsl */`
     return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
                mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z); }
   void main() {
+    #include <logdepthbuf_fragment>
     vec3 n = normalize(vNormal);
     vec3 v = normalize(-vWorldPos);
     // 法線貼圖（切線框架由球面參數推得）
@@ -161,15 +167,23 @@ export const EARTH_FRAG = /* glsl */`
 // 大氣殼：以弦長近似的單次散射（FrontSide、加法混合）
 export const ATMO_VERT = /* glsl */`
   varying vec3 vWorldPos;
-  void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPos = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }
+  #include <logdepthbuf_pars_vertex>
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+    #include <logdepthbuf_vertex>
+  }
 `;
 export const ATMO_FRAG = /* glsl */`
   precision highp float;
+  #include <logdepthbuf_pars_fragment>
   varying vec3 vWorldPos;
   uniform vec3 uCenter;        // 相對相機
   uniform float uRp, uRa;      // 行星半徑、大氣外緣半徑（渲染單位）
   uniform vec3 uSunDir; uniform vec3 uColor; uniform float uDensity; uniform float uSunIntensity;
   void main() {
+    #include <logdepthbuf_fragment>
     vec3 ro = vec3(0.0);
     vec3 rd = normalize(vWorldPos);
     vec3 oc = ro - uCenter;
