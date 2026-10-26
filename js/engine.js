@@ -79,7 +79,7 @@ export class Engine {
     this.composer.addPass(this.renderPass);
     this.useBloom = this.quality !== 'low';
     if (this.useBloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.55, 0.5, 1.1);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.36, 1.18);
       this.composer.addPass(this.bloom);
     }
     this.composer.addPass(new OutputPass());
@@ -614,6 +614,11 @@ export class Engine {
     this.starMat.uniforms.uExposure.value = this.starExposure;
     this.skyMat.uniforms.uIntensity.value = 0.55 * this.starExposure;
     this.coverage = coverage;
+    // 依鄰近天體視角大小微調光暈；不改變天文資料及光照來源。
+    if (this.bloom) {
+      const target = 0.38 + 0.16 * Math.sqrt(coverage);
+      this.bloom.strength = lerp(this.bloom.strength, target, 0.045);
+    }
   }
 
   render() {
