@@ -198,3 +198,15 @@ body.settings-open #hud .info { visibility: hidden; }
   .info { max-height: 100%; }
   .status { font-size: 10px; }
 }
+
+/* ARC iPhone 可讀性與音樂入口修正 */
+#btn-music { min-width:44px; min-height:44px; font-size:22px; color:#fff; opacity:1; background:rgba(5,12,22,.56); border:1px solid rgba(255,255,255,.32); border-radius:50%; }
+#btn-music[aria-pressed="true"] { color:#c4e8ff; border-color:#9bd8ff; }
+@media(max-width:760px){
+  .search input { color:#f4f7fc; background:rgba(0,0,0,.44); text-shadow:0 1px 2px #000; }
+  .search input::placeholder { color:rgba(230,238,250,.76); }
+  .status,.controls,.info { color:#f0f3f8; text-shadow:0 1px 4px #000; }
+  .status { background:linear-gradient(90deg,rgba(0,0,0,.52),transparent); }
+  .controls button { min-height:36px; }
+  .topright .icon { min-width:40px; min-height:44px; }
+}
