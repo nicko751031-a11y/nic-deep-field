@@ -10,14 +10,6 @@ export class UI {
     this.hud = $('hud'); this.restore = $('restore'); this.info = $('info'); this.status = $('status'); this.results = $('results'); this.q = $('q');
     this.toastEl = $('toast'); this.settings = $('settings'); this.labels = $('labels');
     this.hidden = false; this.selIndex = -1; this.lastResults = [];
-    // 電影沉浸模式只改變 HUD 透明度與排版，不影響資料標示或物理運算。
-    const cinema = document.getElementById('btn-cinema');
-    const applyCinema = (enabled) => {
-      document.body.classList.toggle('cinematic', enabled);
-      if (cinema) { cinema.setAttribute('aria-pressed', String(enabled)); cinema.title = enabled ? '關閉電影沉浸模式' : '開啟電影沉浸模式'; }
-    };
-    applyCinema(true);
-    cinema?.addEventListener('click', () => applyCinema(!document.body.classList.contains('cinematic')));
     this.labelEls = new Map();
   }
 
@@ -34,7 +26,7 @@ export class UI {
     for (const [kind, id, zh, sub] of extras) {
       const e = kind === 'star' ? catalog.entries.find((x) => x.kind === 'star' && x.data.n === id) : catalog.entries.find((x) => x.kind === kind && x.id === id);
       if (!e) continue;
-      const btn = document.createElement('button'); btn.innerHTML = `<span>${zh}</span><small>${sub}</small>`;
+      const btn = document.createElement('button'); btn.innerHTML = `<span>${zh}</span><small>${sub}</small>`; btn.dataset.key = `${kind}:${id}`;
       btn.addEventListener('click', () => onPick(e)); list.appendChild(btn);
     }
   }
@@ -74,27 +66,27 @@ export class UI {
   showInfo(info, actions) {
     this.info.style.display = '';
     const badge = `<span class="badge badge-${info.provenance || 'inferred'}">${PROV_LABEL[info.provenance] || info.provenance || ''}</span>`;
-    const touch = document.body.classList.contains('touch');
-    this.info.classList.toggle('collapsed', touch);
-    this.info.innerHTML = `<button class="close" id="info-close" aria-label="關閉">×</button>${touch ? '<button class="toggle" id="info-toggle">詳情</button>' : ''}<h2>${escapeHtml(info.title)}</h2>${badge}<span class="hint">${escapeHtml(info.source || '')}</span>
+    // 預設只顯示名稱、性質標示與來源；「詳情」展開數據與說明（電影式介面，資訊按需顯示）
+    this.info.classList.add('collapsed');
+    this.info.innerHTML = `<button class="close" id="info-close" aria-label="關閉">×</button><button class="toggle" id="info-toggle">詳情</button><h2>${escapeHtml(info.title)}</h2>${badge}<span class="hint">${escapeHtml(info.source || '')}</span>
       <dl>${info.rows.map(([k, v]) => `<dt>${escapeHtml(String(k))}</dt><dd>${escapeHtml(String(v ?? '未知'))}</dd>`).join('')}</dl>
       ${info.note ? `<div class="note">${escapeHtml(info.note)}</div>` : ''}
       <div class="actions" id="info-actions"></div>`;
     $('info-close').addEventListener('click', () => { this.info.style.display = 'none'; });
-    $('info-toggle')?.addEventListener('click', () => { const c = this.info.classList.toggle('collapsed'); $('info-toggle').textContent = c ? '詳情' : '收合'; });
+    $('info-toggle').addEventListener('click', () => { const c = this.info.classList.toggle('collapsed'); $('info-toggle').textContent = c ? '詳情' : '收合'; });
     const box = $('info-actions');
     for (const [label, fn] of actions || []) { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); box.appendChild(b); }
   }
 
   setStatus({ speed, autoSpeed, target, dist, altitude, simTime, rate, frameLabel, frameNote, mode, fps, warp }) {
     this.status.innerHTML = [
-      `速度 <b>${fmtSpeed(speed)}</b>${autoSpeed ? '（自動）' : '（手動）'}${warp ? ' <span style="color:var(--warn)">超光速為模擬效果</span>' : ''}`,
-      target ? `目標 <b>${escapeHtml(target)}</b> 距中心 <b>${fmtDist(dist)}</b>${altitude != null ? ` · 高度 <b>${fmtDist(altitude)}</b>` : ''}` : '',
-      `模擬時間 <b>${fmtDateTime(new Date(simTime))}</b> ${rate === 0 ? '<span style="color:var(--warn)">暫停</span>' : rate === 1 ? '即時' : `×${fmtNum(rate)}`}`,
-      frameLabel ? `所在 <b>${escapeHtml(frameLabel)}</b>${frameNote ? ` <span style="color:var(--warn)">${escapeHtml(frameNote)}</span>` : ''}` : '',
-      mode ? `${escapeHtml(mode)}` : '',
-      fps ? `${fps} fps` : '',
-    ].filter(Boolean).map((s) => `<span>${s}</span>`).join('');
+      ['s-speed', `速度 <b>${fmtSpeed(speed)}</b>${autoSpeed ? '（自動）' : '（手動）'}${warp ? ' <span style="color:var(--warn)">超光速為模擬效果</span>' : ''}`],
+      ['s-target', target ? `目標 <b>${escapeHtml(target)}</b> 距中心 <b>${fmtDist(dist)}</b>${altitude != null ? ` · 高度 <b>${fmtDist(altitude)}</b>` : ''}` : ''],
+      ['s-time', `模擬時間 <b>${fmtDateTime(new Date(simTime))}</b> ${rate === 0 ? '<span style="color:var(--warn)">暫停</span>' : rate === 1 ? '即時' : `×${fmtNum(rate)}`}`],
+      ['s-frame', frameLabel ? `所在 <b>${escapeHtml(frameLabel)}</b>${frameNote ? ` <span style="color:var(--warn)">${escapeHtml(frameNote)}</span>` : ''}` : ''],
+      ['s-mode', mode ? `${escapeHtml(mode)}` : ''],
+      ['s-fps', fps ? `${fps} fps` : ''],
+    ].filter(([, s]) => s).map(([c, s]) => `<span class="${c}">${s}</span>`).join('');
   }
 
   toast(msg, ms = 3200) {
@@ -102,10 +94,18 @@ export class UI {
     clearTimeout(this._tt); this._tt = setTimeout(() => this.toastEl.classList.remove('show'), ms);
   }
 
+  // 標題卡：抵達／開場時畫面中央淡入的大字
+  titleCard(zh, en = '', sub = '', ms = 3000) {
+    const el = $('title-card'); el.querySelector('.t-zh').textContent = zh; el.querySelector('.t-en').textContent = en; el.querySelector('.t-sub').textContent = sub;
+    el.classList.add('show'); clearTimeout(this._tc); this._tc = setTimeout(() => el.classList.remove('show'), ms);
+  }
+
+  markDestination(key) { for (const b of $('dest-list').children) b.classList.toggle('active', b.dataset.key === key); }
+
   setHidden(h) {
     this.hidden = h; this.hud.classList.toggle('hidden', h); this.restore.classList.toggle('show', h);
     this.labels.style.display = h ? 'none' : '';
-    if (h) this.settings.classList.remove('open');
+    if (h) { this.settings.classList.remove('open'); document.body.classList.remove('settings-open'); }
   }
 
   updateLabels(targets, engine, onPick) {
@@ -136,9 +136,13 @@ export class UI {
       ${row('金星顯示 Magellan 雷達地形（非肉眼所見）', `<input type="checkbox" id="s-venus">`)}
       ${row('滑鼠靈敏度', `<input type="range" id="s-sens" min="0.5" max="3" step="0.1" value="1">`)}
       ${row('反轉上下', `<input type="checkbox" id="s-invert">`)}
-      ${row('視野（FOV）', `<input type="range" id="s-fov" min="25" max="100" step="1" value="60">`)}
-      ${row('聲音', `<select id="s-audio"><option value="off">靜音（真空，預設）</option><option value="ambient">合成環境音景（純合成）</option><option value="sonify">資料聲化：行星公轉頻率</option></select>`)}
-      <div class="sub" id="s-audio-note">合成音景＝WebAudio 濾波雜訊，不是任何錄音。資料聲化＝把各行星公轉頻率（1/週期）升高若干八度到可聽範圍，每顆一個正弦音；來源 JPL 軌道週期。宇宙中沒有可被錄下的「太空聲音」，這兩者都不是真實錄音。</div>
+      ${row('視野（FOV）', `<input type="range" id="s-fov" min="25" max="100" step="1" value="50">`)}
+      ${row('電影式影像（顆粒、暗角、色差、調色）', `<input type="checkbox" id="s-cine" ${opts.cine ? 'checked' : ''}>`)}
+      ${row('寬銀幕黑邊 2.39:1（C）', `<input type="checkbox" id="s-bars" ${opts.bars ? 'checked' : ''}>`)}
+      ${row('鏡頭呼吸（極小幅緩慢擺動）', `<input type="checkbox" id="s-breath" ${opts.breath ? 'checked' : ''}>`)}
+      ${row('介面閒置 4 秒後自動淡出', `<input type="checkbox" id="s-autohide" ${opts.autohide ? 'checked' : ''}>`)}
+      ${row('聲音', `<select id="s-audio"><option value="off">靜音（真空，預設）</option><option value="arc">ARC 原創電影感配樂（純合成）</option><option value="organ">合成管風琴式音景（純合成）</option><option value="ambient">合成低頻音景（純合成）</option><option value="sonify">資料聲化：行星公轉頻率</option></select>`)}
+      <div class="sub" id="s-audio-note">ARC 原創配樂＝WebAudio 自行合成的四段緩慢和聲循環，不含任何電影配樂旋律或錄音。管風琴式音景＝WebAudio 加法合成的持續和弦，不是錄音，也不是任何電影配樂。低頻音景＝濾波雜訊。資料聲化＝把各行星公轉頻率（1/週期）升高若干八度到可聽範圍，每顆一個正弦音；來源 JPL 軌道週期。宇宙中沒有可被錄下的「太空聲音」，三者都不是真實錄音。</div>
       <details><summary>目錄收錄範圍與資料來源</summary><div id="s-catalog"></div></details>
       <details><summary>貼圖與影像來源／載入狀態</summary><div id="s-textures"></div></details>
       <details><summary>已知限制（測試版）</summary><ul style="font-size:12px;color:var(--muted);padding-left:18px">
@@ -156,6 +160,10 @@ export class UI {
     $('s-sens').addEventListener('input', (e) => opts.onSens(parseFloat(e.target.value)));
     $('s-invert').addEventListener('change', (e) => opts.onInvert(e.target.checked));
     $('s-fov').addEventListener('input', (e) => opts.onFov(parseFloat(e.target.value)));
+    $('s-cine').addEventListener('change', (e) => opts.onCine(e.target.checked));
+    $('s-bars').addEventListener('change', (e) => opts.onBars(e.target.checked));
+    $('s-breath').addEventListener('change', (e) => opts.onBreath(e.target.checked));
+    $('s-autohide').addEventListener('change', (e) => opts.onAutohide(e.target.checked));
     $('s-audio').addEventListener('change', (e) => opts.onAudio(e.target.value));
   }
   fillCatalogInfo(catalog, engine) {
