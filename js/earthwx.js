@@ -5,7 +5,7 @@
 // - 失敗（CORS、停機、尺寸不符、全透明）一律顯示「—」，不用舊圖或快照冒充
 // 影像為 10.3 µm 紅外線：冷雲頂亮、地表暗；不是真彩色，也不是三維雲高。
 import * as THREE from 'three';
-import { WeatherLayerState } from './earthlayers.js';
+import { WeatherLayerState, NRT_POLICY } from './earthlayers.js';
 import { loadHimawariTaiwan, WEATHER_SOURCE } from './earthweather.js';
 
 export class EarthWeatherLayer {
@@ -24,20 +24,33 @@ export class EarthWeatherLayer {
   setEnabled(on) {
     this.enabled = !!on && this.available;
     if (!this.enabled) { this.state.stop(); this.onStatus({ status: 'off', text: '未開啟' }); return; }
-    this._maybeRefresh(true);
+    this.wasValid = this.timeValid;
+    if (this.wasValid) this._maybeRefresh(true); else this.onStatus({ status: 'unavailable', reason: '模擬時間與現在不同，請把時間倍率設回即時', text: '時間：— · 模擬時間與現在不同，請把時間倍率設回即時' });
   }
   refresh() { if (this.enabled) this._maybeRefresh(true); }
 
-  // 主迴圈每幀呼叫；內部每秒檢查一次：過期撤圖、每 10 分鐘更新（頁面在背景時不更新）
+  // 時間閘門是否成立：倍率＝即時且模擬時間在現在 ±60 秒內（與 earthlayers.weatherGate 同一條件）
+  get timeValid() { return this.engine.timeRate === 1 && Math.abs(Date.now() - this.engine.simTime) <= NRT_POLICY.maxClockSkewMs; }
+
+  // 主迴圈每幀呼叫；內部每秒檢查一次：過期撤圖、每 10 分鐘更新（頁面在背景時不更新）。
+  // 時間閘門由不成立→成立（例如按「回到現在」）時立即重驗一次，不受 10 分鐘節流；但兩次重驗至少間隔 5 秒，避免反覆切換倍率造成請求風暴
   update() {
     if (!this.enabled) return;
     const now = performance.now(); if (now - this.lastTick < 1000) return; this.lastTick = now;
     this.state.tick();
-    if (!document.hidden) this._maybeRefresh(false);
+    const valid = this.timeValid; const recovered = valid && !this.wasValid; this.wasValid = valid;
+    if (document.hidden || !valid) return;
+    if ((recovered || this.pendingForce) && this.state.status !== 'loading') this._maybeRefresh(true);
+    else this._maybeRefresh(false);
   }
   _maybeRefresh(force) {
-    if (!force && Date.now() - this.lastRefresh < WEATHER_SOURCE.cadenceMs) return;
-    this.lastRefresh = Date.now();
+    const now = Date.now(); const since = now - this.lastRefresh;
+    if (!force && since < WEATHER_SOURCE.cadenceMs) return;
+    if (force && this.state.status === 'loading') { this.pendingForce = true; return; } // 已在驗證中：記下，完成後再驗
+    if (force && this.lastForced && now - this.lastForced < 5000) { this.pendingForce = true; return; } // 5 秒內只允許一次強制重驗，其餘延後（不丟失）
+    this.pendingForce = false;
+    this.lastRefresh = now; if (force) this.lastForced = now;
+    this.requests = (this.requests || 0) + 1;
     this.state.refresh(loadHimawariTaiwan).catch(() => {});
   }
   _apply(s) {

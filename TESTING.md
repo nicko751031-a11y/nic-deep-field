@@ -213,3 +213,9 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - **單元測試**：`test_earthlod_index` 17 項、`test_earthlod_budget` 8 項、`test_earthlayers`＋`test_earthterrain` 61 項全部通過。
 - **瀏覽器回歸**（無頭 Chromium）：結果見本節下方更新與 PR #19 留言。真機未測；正式站 GIBS 連線與 CORS 需真機確認。
 - **最終回歸（`254ec1a`＋測試調整）**：`nan_sweep` 11 場景非有限值 0、無黑幀；`lod_stress` medium／high 各 336／353 次取樣 0 次超出預算、context 未遺失；GPT `earth_layers_browser_test` 5 情境（桌面、手機直橫向、手機極區、刻意缺塊）通過——極區情境依設計因 128 MB 硬上限降到 L1（`capLevel=1`），測試改為接受 level ≥ 1；GPT `earth_terrain_browser_test` 3 情境通過（來源在建置環境連不到，注入失敗撤圖正常）；`browser_test` 桌面（台灣 1,800 km L2、載入 6 塊 129 MB、shader 錯誤 0）＋Pixel 7 直向（38 鈕、重疊 0、console 0）＋橫向（39 鈕、重疊 0、console 0）。
+
+## 近即時紅外線圖層：回到即時後立即重驗（2026-10-27，Claude 工程；回應 GPT 在 PR #19 的稽核）
+
+- 問題（GPT 靜態推導，正確）：加速撤圖後回到即時，只會等 10 分鐘節流到期才重驗。
+- 修正（`js/earthwx.js`）：每秒 tick 追蹤時間閘門「不成立→成立」的轉移（含按「回到現在」），轉移時立即受控重驗；強制重驗 5 秒內只允許一次，其餘延後執行不丟失（`pendingForce`）；驗證中不重複發出；背景頁籤不抓圖，切回可見後才重驗。
+- 測試（`tools/wx_layer_test.mjs` 擴充，route 模擬 GIBS）：按「回到現在」後 1.8 秒自動恢復 ready；反覆切換倍率 20 次只多 0 次請求，結束後恢復 ready；背景頁籤回到即時不抓圖（0 次）、切回可見後恢復；503 仍撤圖；shader 錯誤 0、console 0。

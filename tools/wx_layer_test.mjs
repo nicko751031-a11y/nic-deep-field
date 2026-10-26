@@ -55,6 +55,33 @@ await page.evaluate(() => { window.__ndf.engine.timeRate = 60; });
 await page.waitForFunction(() => window.__ndf.earthWx.state.status !== 'ready', null, { timeout: 5000 }).catch(() => {});
 s = await page.evaluate(() => ({ status: window.__ndf.earthWx.state.status, reason: window.__ndf.earthWx.state.reason, on: window.__ndf.engine.bodies.get('earth').mesh.material.uniforms.uWxOn.value, note: document.getElementById('wx-note')?.textContent }));
 ok(s.status === 'unavailable' && s.on === 0 && /—/.test(s.note || ''), `時間加速後撤圖：${s.status}／${s.reason}／${s.note}`);
+// 按「回到現在」（不手動 refresh）→ 5 秒內自動重驗並恢復 ready
+const t0 = Date.now();
+await page.evaluate(() => document.getElementById('b-now').click());
+await page.waitForFunction(() => window.__ndf.earthWx.state.status === 'ready', null, { timeout: 15000 }).catch(() => {});
+s = await page.evaluate(() => ({ status: window.__ndf.earthWx.state.status, on: window.__ndf.engine.bodies.get('earth').mesh.material.uniforms.uWxOn.value, note: document.getElementById('wx-note')?.textContent, requests: window.__ndf.earthWx.requests }));
+ok(s.status === 'ready' && s.on === 1 && Date.now() - t0 < 8000, `按「回到現在」後 ${Math.round((Date.now() - t0) / 100) / 10} 秒內自動恢復：${s.status}，uWxOn=${s.on}，${s.note}`);
+// 反覆切換倍率 20 次：請求數受 5 秒節流，不形成風暴；最後回到即時仍為 ready
+const before = s.requests;
+for (let i = 0; i < 20; i++) { await page.evaluate(() => { window.__ndf.engine.timeRate = 60; }); await page.waitForTimeout(60); await page.evaluate(() => { window.__ndf.engine.timeRate = 1; window.__ndf.engine.simTime = Date.now(); }); await page.waitForTimeout(60); }
+await page.waitForTimeout(4000);
+s = await page.evaluate(() => ({ status: window.__ndf.earthWx.state.status, requests: window.__ndf.earthWx.requests, on: window.__ndf.engine.bodies.get('earth').mesh.material.uniforms.uWxOn.value }));
+ok(s.requests - before <= 2, `反覆切換 20 次只多 ${s.requests - before} 次請求（${s.status}）`);
+await page.waitForFunction(() => window.__ndf.earthWx.state.status === 'ready', null, { timeout: 15000 }).catch(() => {});
+s = await page.evaluate(() => ({ status: window.__ndf.earthWx.state.status, on: window.__ndf.engine.bodies.get('earth').mesh.material.uniforms.uWxOn.value }));
+ok(s.status === 'ready' && s.on === 1, `切換結束回到即時後恢復：${s.status}，uWxOn=${s.on}`);
+// 背景頁籤：模擬 document.hidden=true 時不重驗（加速→撤圖→回到即時，隱藏期間維持「—」；可見後才恢復）
+await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); window.__ndf.engine.timeRate = 60; });
+await page.waitForFunction(() => window.__ndf.earthWx.state.status !== 'ready', null, { timeout: 5000 }).catch(() => {});
+const reqHidden = await page.evaluate(() => window.__ndf.earthWx.requests);
+await page.evaluate(() => { window.__ndf.engine.timeRate = 1; window.__ndf.engine.simTime = Date.now(); });
+await page.waitForTimeout(3500);
+s = await page.evaluate(() => ({ status: window.__ndf.earthWx.state.status, requests: window.__ndf.earthWx.requests }));
+ok(s.status !== 'ready' && s.requests === reqHidden, `背景頁籤回到即時不抓圖：${s.status}，請求 ${s.requests - reqHidden} 次`);
+await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+await page.waitForFunction(() => window.__ndf.earthWx.state.status === 'ready', null, { timeout: 15000 }).catch(() => {});
+s = await page.evaluate(() => ({ status: window.__ndf.earthWx.state.status, on: window.__ndf.engine.bodies.get('earth').mesh.material.uniforms.uWxOn.value }));
+ok(s.status === 'ready' && s.on === 1, `切回可見後恢復：${s.status}，uWxOn=${s.on}`);
 // 回到即時但來源 503 → 失敗顯示「—」
 fail503 = true;
 await page.evaluate(() => { window.__ndf.engine.timeRate = 1; window.__ndf.engine.simTime = Date.now(); window.__ndf.earthWx.refresh(); });
