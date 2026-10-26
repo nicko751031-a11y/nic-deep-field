@@ -19,7 +19,9 @@ export const PLANET_VERT = /* glsl */`
     vWorldPos = wp.xyz;
     vNormal = normalize(mat3(modelMatrix) * normal);
     vec3 pn = normalize(position);
-    vec3 t = normalize(vec3(-pn.z, 0.0, pn.x));
+    vec3 tangentRaw = vec3(-pn.z, 0.0, pn.x);
+    // 球面兩極的切線長度趨近零；避免 normalize(0) 在部分行動 GPU 產生 NaN 與三角形破圖。
+    vec3 t = dot(tangentRaw, tangentRaw) > 1e-8 ? normalize(tangentRaw) : vec3(1.0, 0.0, 0.0);
     vTangent = normalize(mat3(modelMatrix) * t);
     vBitangent = normalize(mat3(modelMatrix) * cross(pn, t));
     gl_Position = projectionMatrix * viewMatrix * wp;
