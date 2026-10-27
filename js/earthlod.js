@@ -94,7 +94,7 @@ export class EarthLod {
     for (const p of patches) {
       const u = p.material.uniforms;
       for (const k of ['uSunDir', 'uAtmoColor']) u[k].value.copy(base[k].value);
-      for (const k of ['uSunIntensity', 'uDetail', 'uCloudShift', 'uCloudOpacity', 'uNightBoost', 'uNormalStrength', 'uUOffset', 'uHasRings', 'uWxOn']) if (base[k] && u[k]) u[k].value = base[k].value;
+      for (const k of ['uSunIntensity', 'uDetail', 'uCloudShift', 'uCloudOpacity', 'uNightBoost', 'uNormalStrength', 'uUOffset', 'uHasRings', 'uWxOn', 'uDebugFlat']) if (base[k] && u[k]) u[k].value = base[k].value;
       if (base.uWx && u.uWx) { u.uWx.value = base.uWx.value; u.uWxBox.value.copy(base.uWxBox.value); } // 近即時紅外線圖層（共用貼圖）
       // 可見：補丁中心或任一角在視錐內，且該點面向相機（相機在原點）
       let visible = hitKeys.has(p.userData.key), prio = visible ? 1 : -2;

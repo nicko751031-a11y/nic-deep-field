@@ -63,14 +63,16 @@ async function boot() {
   audio.onState = syncAudioUI;
   // 最後操作優先：resume 等待期間再按停止或改選音景，直接交給 audio.start()（內部 seq 讓舊啟動作廢，不疊加節點）；
   // 按鈕在等待期間顯示「啟動中」，點擊視為取消（off）
-  let audioPending = null;
+  // 每次操作有唯一序號：只有最後一次操作可以清除 pending 與回寫介面（避免同模式 A→off→A 的 ABA 競態：舊 A 完成不得清掉新 A 的 pending）
+  let audioSeq = 0; let audioPending = null; // audioPending = { seq, mode } 或 null
   const startAudio = async (mode) => {
-    audioPending = mode; if (musicButton) musicButton.title = mode === 'off' ? '停止中' : '音訊啟動中（再點一次取消）';
+    const my = ++audioSeq; audioPending = { seq: my, mode };
+    if (musicButton) musicButton.title = mode === 'off' ? '停止中' : '音訊啟動中（再點一次取消）';
     const r = await audio.start(mode);
-    if (audioPending === mode) audioPending = null;
-    syncAudioUI(r); return r;
+    if (my !== audioSeq) return r; // 已被更新的操作取代：不動 pending、不回寫介面
+    audioPending = null; syncAudioUI(r); return r;
   };
-  musicButton?.addEventListener('click', () => { startAudio(audioPending && audioPending !== 'off' ? 'off' : audio.mode === 'off' ? 'ambient' : 'off'); });
+  musicButton?.addEventListener('click', () => { startAudio(audioPending && audioPending.mode !== 'off' ? 'off' : audio.mode === 'off' ? 'ambient' : 'off'); });
   const observe = new ObservePanel($('observe'), engine, (iss) => { engine.earthMarker = iss; $('observe').classList.remove('open'); goToEarthMarker(iss); });
   const isTouch = controls.isTouchDevice();
   if (isTouch) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠', 7000), 6000); }

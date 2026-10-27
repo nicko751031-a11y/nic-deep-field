@@ -266,7 +266,7 @@ export class Engine {
           uniforms: { ...common, uDay: { value: this.textures[T.day] }, uNight: { value: this.textures[T.night] }, uBRC: { value: this.textures[T.brc] }, uNormal: { value: this.textures[T.normal] },
             uCloudShift: { value: 0 }, uCloudOpacity: { value: 1 }, uNightBoost: { value: 1.0 }, uNormalStrength: { value: this.quality === 'high' ? 0.22 : 0.0 }, uAtmoColor: { value: new THREE.Color(...b.atmosphere.color) }, uHasRings: { value: 0 },
             uTile: { value: null }, uHasTile: { value: 0 }, uTileOff: { value: new THREE.Vector2() }, uTileScale: { value: new THREE.Vector2(1, 1) },
-            uWx: { value: null }, uWxBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uWxOn: { value: 0 } },
+            uWx: { value: null }, uWxBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uWxOn: { value: 0 }, uDebugFlat: { value: 0 } },
         });
         if (!this.textures[T.day]) mat = this._fallbackMat(b, common);
       } else if (T.kind === 'sun') {
@@ -726,6 +726,44 @@ export class Engine {
       const l = 0.2126 * r + 0.7152 * g + 0.0722 * b; sum += l; if (l > maxV) maxV = l;
     }
     return { w, h, bad, first, meanLuma: sum / (w * h), maxLuma: maxV };
+  }
+
+  // 診斷：地球球面覆蓋自檢。把地球（本體＋分塊補丁）畫成純白、隱藏大氣，讀回畫面統計白色像素；
+  // 分別量「目前 LOD 層」與「強制 L0 本體」兩種，回傳比值：補丁若有缺塊或剔除錯誤，ratio 會明顯 < 1（純幾何量測，不受日夜相位影響）。
+  coverageSelfTest(scale = 0.35) {
+    const e = this.bodies.get('earth'); if (!e) return null;
+    const lod = this.earthLod; const mats = [e.mesh.material]; if (lod) for (const arr of lod.patches.values()) for (const p of arr) mats.push(p.material);
+    const setFlat = (v) => { for (const m of mats) if (m.uniforms?.uDebugFlat) m.uniforms.uDebugFlat.value = v; };
+    const atmoVis = e.atmo ? e.atmo.visible : null; if (e.atmo) e.atmo.visible = false;
+    const starsVis = this.stars ? this.stars.visible : null; if (this.stars) this.stars.visible = false;
+    const skyI = this.skyMat.uniforms.uIntensity.value; this.skyMat.uniforms.uIntensity.value = 0;
+    const count = () => { const s = this.scanNonFinite(scale); return s; };
+    const white = (scale2) => {
+      const pr = this.renderer.getPixelRatio(); const w = Math.max(8, Math.floor(this.width * pr * scale2)), h = Math.max(8, Math.floor(this.height * pr * scale2));
+      this.renderer.setRenderTarget(this._scanRT); this.renderer.render(this.scene, this.camera);
+      const buf = new Float32Array(w * h * 4); this.renderer.readRenderTargetPixels(this._scanRT, 0, 0, w, h, buf); this.renderer.setRenderTarget(null);
+      // 白色像素數＋「洞」偵測：球面投影（含被視窗裁切）是凸形，每一列白像素應為單一連續段；列內首尾白像素之間的黑像素即為缺塊／缺面
+      let n = 0, holes = 0;
+      for (let y = 0; y < h; y++) {
+        let first = -1, last = -1;
+        for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; if (buf[i] > 0.5 && buf[i + 1] > 0.5) { n++; if (first < 0) first = x; last = x; } }
+        if (first >= 0) for (let x = first; x <= last; x++) { const i = (y * w + x) * 4; if (!(buf[i] > 0.5 && buf[i + 1] > 0.5)) holes++; }
+      }
+      lastHoles = holes; return n;
+    };
+    let lastHoles = 0;
+    let result = null;
+    try {
+      setFlat(1); count(); // 確保 _scanRT 尺寸正確
+      const level = lod ? lod.level : 0;
+      const withLod = white(scale); const lodHoles = lastHoles;
+      let base = withLod;
+      if (lod && level > 0) { for (const arr of lod.patches.values()) for (const p of arr) p.visible = false; e.mesh.material.visible = true; base = white(scale); for (const [lv, arr] of lod.patches) for (const p of arr) p.visible = lv === level; e.mesh.material.visible = level === 0; }
+      result = { level, lodPixels: withLod, basePixels: base, ratio: base ? withLod / base : 1, holes: lodHoles, holeFraction: withLod ? lodHoles / withLod : 0, altitudeKm: Math.round(e.group.position.length() - e.def.radius) };
+    } finally {
+      setFlat(0); if (e.atmo) e.atmo.visible = atmoVis; if (this.stars) this.stars.visible = starsVis; this.skyMat.uniforms.uIntensity.value = skyI;
+    }
+    return result;
   }
 
   // 投影到螢幕（給 HTML 標籤）

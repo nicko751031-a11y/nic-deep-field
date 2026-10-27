@@ -11,7 +11,7 @@
 | # | 缺點 | 影響 | 狀態 | 負責 | 證據／處置 |
 |---|---|---|---|---|---|
 | A1 | **畫面一直閃爍黑屏**（負責人 2026-10-27 回報，裝置未註明） | 無法使用 | 🔧 PR `claude/stability-flicker` | Claude | 無頭 Chromium 在 11 個場景掃描非有限值像素皆 0、連續 6 幀亮度無黑幀，**無法在本環境重現**，判定為裝置特定。已同時處理四個可能原因：(1) WebGL context 反覆遺失→現在 `preventDefault` 可恢復並自動降級（像素比、Bloom），不再黑屏迴圈；(2) NaN 進入 Bloom 把整幀染黑→所有片段著色器輸出前 `safeColor()` 歸零、地球切線 `safeNormalize()`；(3) 畫布 MSAA 浪費記憶體（經後處理時沒有作用）→改由 composer 暫存做 MSAA，總像素上限（高 4.6 MP／中 2.6 MP／低 1.6 MP）避免大尺寸 iPad 爆記憶體；(4) 新增**安全模式**（設定面板或 `?safe=1`：關後處理、對數深度、呼吸，像素比 1）供負責人二分法確認。`?diag=1` 新增「非有限值像素／黑幀／context lost／降級」計數，請負責人在閃爍的裝置上開啟並按「產生／複製報告」回傳。 |
-| A2 | iPhone 黑色多邊形（先前回報） | 地球破圖 | 🔍 | Claude＋負責人 | 根因未證實；A1 的 NaN 防護與切線修正涵蓋最可能原因，仍需 `?diag=1` 報告。 |
+| A2 | iPhone 黑色多邊形／黑色扇形（先前回報＋2026-10-27 07:20 錄影） | 地球破圖 | 🔍 | Claude＋負責人 | Chromium iPhone 模擬 24 方位覆蓋比值 1.000、黑洞 0%；錄影時刻（23:20 UTC）亞洲在夜側，形態與正常相位一致。真機請用 `?diag=1`「球面覆蓋自檢」確認（黑洞 > 0.5% 才是缺面）。 |
 | A3 | 未經瀏覽器回歸就部署（`f2faced` 事件，正式站行星消失約 2 小時） | 正式站壞掉 | ✅ 流程 | GPT／Claude | 已在 Issue #8 要求：推送鏡像前至少跑 `tools/browser_test.mjs` 或 `?diag=1` 看 shader 錯誤 0；Claude 每 2 分鐘檢查。建議再加 GitHub Actions 在鏡像同步前自動跑回歸（📋）。 |
 | A4 | 地球 16K 分塊在手機 128 MB 只是軟上限 | 記憶體爆 | ✅ `e2ab913` | Claude | 兩道硬上限，壓力測試 0 次超出。 |
 | A5 | 換用同來源底圖後原 4K 貼圖未釋放（約 45 MB） | 記憶體 | ✅ `9988e08` | Claude | — |
@@ -20,6 +20,7 @@
 | A8 | WebAudio 啟動狀態與介面不同步（`resume()` 未 await；選單預設顯示音景） | ✅ `audio.start()`＋`syncAudioUI`（GPT QA 發現） | Claude | 單元 9 項＋瀏覽器假 AudioContext 測試通過；iOS 真機未測。 |
 | A9 | 分塊首次載入失敗後永久停留 4K，無重試 | ✅ 退避重試 5 次後放棄＋手動重試（GPT Issue #16 發現） | Claude | `lod_retry_test` 通過。 |
 | A10 | 觀測面板「重新讀取」競態：舊回應蓋掉新狀態 | ✅ 序號守衛（GPT Issue #8 發現） | Claude | `observe_race_test` 通過。 |
+| A11 | 音訊同模式 ABA 競態（舊操作清掉新 pending） | ✅ 操作序號（GPT 第三次稽核） | Claude | `audio_ui_test` ABA／反向完成序通過。 |
 
 ## B. 效能
 

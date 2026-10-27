@@ -47,6 +47,7 @@ export function initDiag(engine, controls, { quality } = {}) {
   };
   flags.post = engine.postOn !== false;
   for (const b of Object.values(tbtns)) toggles.appendChild(b);
+  toggles.appendChild(btn('球面覆蓋自檢', () => { const r = engine.coverageSelfTest?.(); live.textContent += r ? `\n覆蓋自檢：L${r.level} 像素 ${r.lodPixels}／L0 像素 ${r.basePixels}，比值 ${r.ratio.toFixed(3)}，盤面內黑洞像素 ${r.holes}（${(r.holeFraction * 100).toFixed(2)}%）${r.ratio < 0.98 || r.holeFraction > 0.005 ? '（⚠ 球面有缺塊／缺面）' : '（完整）'}，高度 ${r.altitudeKm} km` : '\n覆蓋自檢：無地球'; state.coverage = r; }));
   toggles.appendChild(btn('重試失敗分塊', () => { const n = engine.earthLod?.retryFailed?.() ?? 0; live.textContent += `\n已重置 ${n} 個失敗分塊`; }));
   toggles.appendChild(btn('像素比 1', () => { engine.maxPixelRatio = 1; engine.resize(); }));
   toggles.appendChild(btn('安全模式（重載）', () => { const u = new URL(location.href); u.searchParams.set('safe', '1'); location.href = u.toString(); }));
@@ -58,7 +59,7 @@ export function initDiag(engine, controls, { quality } = {}) {
 
   // ---- 報告（複製到剪貼簿 ＋ 文字框）
   const ta = document.createElement('textarea'); ta.style.cssText = 'width:100%;height:90px;font:10px monospace;background:#000;color:#9fd9b4;border:1px solid rgba(255,255,255,.2);margin-top:6px'; ta.readOnly = true;
-  const report = () => JSON.stringify({ time: new Date().toISOString(), caps, flags, fps: { avg: state.fps, min: state.fpsMin }, earthLod: engine.earthLod?.status() || null, frame: engine.renderer.info.render, memory: engine.renderer.info.memory, programs: engine.renderer.info.programs?.length, jsHeapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, contextLost: state.lost, engineContextLost: engine.contextLost, degrade: engine.degrade, pixelRatioNow: engine.renderer.getPixelRatio(), post: engine.postOn, nan: { scans: state.nanScans, pixels: state.nanPixels, first: state.nanFirst || null }, blackFrames: state.blackFrames, lumaMax: state.lumaMax, shaderErrors: state.errors, consoleErrors: state.consoleErrors, frameType: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) }, null, 1);
+  const report = () => JSON.stringify({ time: new Date().toISOString(), caps, flags, fps: { avg: state.fps, min: state.fpsMin }, earthLod: engine.earthLod?.status() || null, frame: engine.renderer.info.render, memory: engine.renderer.info.memory, programs: engine.renderer.info.programs?.length, jsHeapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, contextLost: state.lost, engineContextLost: engine.contextLost, degrade: engine.degrade, pixelRatioNow: engine.renderer.getPixelRatio(), post: engine.postOn, nan: { scans: state.nanScans, pixels: state.nanPixels, first: state.nanFirst || null }, blackFrames: state.blackFrames, coverage: state.coverage || null, lumaMax: state.lumaMax, shaderErrors: state.errors, consoleErrors: state.consoleErrors, frameType: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) }, null, 1);
   box.appendChild(btn('產生／複製報告', async () => { const r = report(); ta.value = r; ta.style.display = ''; try { await navigator.clipboard.writeText(r); ta.value = '（已複製到剪貼簿）\n' + r; } catch (e) { /* iOS 可能拒絕，改由文字框手動複製 */ } }));
   box.appendChild(btn('隱藏診斷', () => { box.style.display = 'none'; }));
   ta.style.display = 'none'; box.appendChild(ta);

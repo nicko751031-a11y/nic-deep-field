@@ -15,7 +15,7 @@ await page.addInitScript(() => {
   window.__audioLive = 0; window.__audioPolicy = 'reject';
   class FakeCtx {
     constructor() { this.state = 'suspended'; this.sampleRate = 44100; this.currentTime = 0; this.destination = {}; window.__fakeCtx = this; }
-    resume() { if (window.__audioPolicy === 'reject') return Promise.reject(new DOMException('NotAllowedError', 'NotAllowedError')); if (window.__audioPolicy === 'hang') return new Promise(() => {}); if (window.__audioPolicy === 'delay') return new Promise((res) => setTimeout(() => { this.state = 'running'; res(); }, 1200)); this.state = 'running'; return Promise.resolve(); }
+    resume() { if (window.__audioPolicy === 'reject') return Promise.reject(new DOMException('NotAllowedError', 'NotAllowedError')); if (window.__audioPolicy === 'hang') return new Promise(() => {}); if (window.__audioPolicy === 'delay') return new Promise((res) => setTimeout(() => { this.state = 'running'; res(); }, 1200)); if (window.__audioPolicy === 'manual') return new Promise((res) => { (window.__resumers ||= []).push(() => { this.state = 'running'; res(); }); }); this.state = 'running'; return Promise.resolve(); }
     createGain() { return new N(); } createOscillator() { return new N(); } createBufferSource() { return new N(); } createBiquadFilter() { return new N(); } createDynamicsCompressor() { return new N(); }
     createBuffer(ch, len, sr) { return { getChannelData: () => new Float32Array(len), length: len, sampleRate: sr }; }
   }
@@ -60,6 +60,25 @@ await page.waitForTimeout(2500); s = await ui();
 ok((s.pressed === 'true') === (s.live > 0) && s.live <= Math.max(organNodes, 70), `快速切換 20 次後狀態一致：pressed=${s.pressed}，節點 ${s.live}，選單 ${s.sel}`);
 await page.evaluate(() => { const i = document.getElementById('s-audio'); i.value = 'off'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await page.waitForTimeout(300);
 s = await ui(); ok(s.live === 0 && s.pressed === 'false', '最後靜音 → 節點 0');
+// 9) ABA（GPT 第三次稽核）：A ambient 等待 → B off → C ambient 等待 → 只放行 A（舊）→ 第四次按鈕必須是取消（off），最終靜音、節點 0
+await page.evaluate(() => { window.__audioPolicy = 'manual'; window.__resumers = []; window.__fakeCtx.state = 'suspended'; });
+await page.click('#btn-music'); await page.waitForTimeout(150); // A
+await page.click('#btn-music'); await page.waitForTimeout(150); // B = off（取消）
+await page.evaluate(() => { window.__fakeCtx.state = 'suspended'; });
+await page.click('#btn-music'); await page.waitForTimeout(150); // C = ambient（等待）
+await page.evaluate(() => { const r = window.__resumers.shift(); window.__fakeCtx.state = 'suspended'; r && r(); }); await page.waitForTimeout(300); // 放行 A（舊），注意 A 的 resolver 把 state 設 running；C 仍待放行
+await page.evaluate(() => { window.__fakeCtx.state = 'suspended'; });
+await page.click('#btn-music'); await page.waitForTimeout(200); // 第四次：應為取消 C
+await page.evaluate(() => { for (const r of window.__resumers.splice(0)) r(); }); await page.waitForTimeout(500); // 放行其餘
+s = await ui(); ok(s.pressed === 'false' && s.live === 0 && s.sel === 'off', `ABA 錯序：第四次按鈕為取消，最終未播放、節點 ${s.live}、選單 ${s.sel}`);
+// 10) 反向：A 等待 → B off → C 等待 → 先放行 C → 再放行 A：C 的播放狀態不被舊 A 蓋掉
+await page.evaluate(() => { window.__resumers = []; window.__fakeCtx.state = 'suspended'; });
+await page.click('#btn-music'); await page.waitForTimeout(150); await page.click('#btn-music'); await page.waitForTimeout(150);
+await page.evaluate(() => { window.__fakeCtx.state = 'suspended'; }); await page.click('#btn-music'); await page.waitForTimeout(150);
+await page.evaluate(() => { const rs = window.__resumers; const c = rs.pop(); c && c(); }); await page.waitForTimeout(300);
+await page.evaluate(() => { for (const r of window.__resumers.splice(0)) r(); }); await page.waitForTimeout(400);
+s = await ui(); ok(s.pressed === 'true' && s.live > 0 && s.sel === 'ambient', `反向完成序：最新操作（C 播放）保持，pressed=${s.pressed}、節點 ${s.live}`);
+await page.evaluate(() => { const i = document.getElementById('s-audio'); i.value = 'off'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await page.waitForTimeout(300);
 const real = errs.filter((e) => !/TUNNEL|Failed to load resource|favicon/.test(e)); ok(real.length === 0, `console／page 錯誤 0${real.length ? '：' + real.join(' | ') : ''}`);
 await browser.close();
 console.log(fails ? `\n${fails} 項失敗` : '\n全部通過');

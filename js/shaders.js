@@ -121,12 +121,14 @@ export const EARTH_FRAG = /* glsl */`
   uniform float uHasRings; // 不用，保持介面一致
   // 近即時紅外線雲圖（NASA GIBS Himawari Band 13，區域）：uWxBox = (u0, v0, u1, v1) 全球 UV 範圍；uWxOn=0 時完全不取樣
   uniform sampler2D uWx; uniform vec4 uWxBox; uniform float uWxOn; uniform float uUOffset;
+  uniform float uDebugFlat; // 診斷：>0.5 時輸出純白，供「球面覆蓋自檢」量測地球盤面是否有缺塊（不是正常渲染）
   float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   float noise3(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
                mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z); }
   void main() {
     #include <logdepthbuf_fragment>
+    if (uDebugFlat > 0.5) { gl_FragColor = vec4(1.0); return; }
     vec3 n = normalize(vNormal);
     vec3 v = normalize(-vWorldPos);
     // 法線貼圖（切線框架由球面參數推得）
