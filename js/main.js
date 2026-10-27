@@ -435,7 +435,7 @@ async function boot() {
       const rel = tgt ? Math.hypot(tgt.pos[0] - engine.camPos[0], tgt.pos[1] - engine.camPos[1], tgt.pos[2] - engine.camPos[2]) : null;
       const radius = tgt ? (tgt.def?.radius ?? tgt.radius) : null;
       ui.setStatus({
-        speed: controls.autoSpeed ? controls.currentSpeed : controls.manualSpeed, autoSpeed: controls.autoSpeed,
+        speed: controls.autoSpeed || controls.boost ? controls.currentSpeed : controls.manualSpeed, autoSpeed: controls.autoSpeed, boost: controls.boost,
         target: tgt ? (tgt.def?.zh ?? tgt.zh) : null, dist: rel, altitude: rel != null && radius != null && engine.frame.type !== 'bh' ? rel - radius : null,
         simTime: engine.simTime, rate: engine.timeRate,
         frameLabel: engine.frame.type === 'solar' ? '太陽系（真實比例與星曆）' : engine.frame.label, frameNote,

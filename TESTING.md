@@ -311,3 +311,10 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - **原因**：`<link rel="modulepreload">` 放在 `<script type="importmap">` 之前。預載的模組一下載完就解析其 `import 'three'`，快取命中時這發生在 importmap 登錄之前，裸名解析失敗並記錄在模組表；之後 `main.js` 的正式 import 取回的是已出錯的模組。首次造訪因為下載較慢、importmap 先登錄而僥倖通過。
 - **修正**：importmap 移到所有預載標籤之前；`test_modulepreload.mjs` 的順序斷言反轉（原本斷言錯誤方向）。
 - `tools/reload_test.mjs`（無頭 Chromium，新；加入例行回歸）：首次造訪 → 重新整理（快取命中）→ 同頁導向 `?diag=1`（診斷層存在）→ 無參數再造訪，每次都須在 90 秒內完成初始化、console／page 錯誤 0。修正前第二步停在「初始化…」。
+
+## 鍵盤移動時按住 Shift ＝ 光速（2026-10-27 負責人需求）
+
+- `controls.js`：有移動輸入（WASD／R／F／搖桿）且按住 Shift 時 `boost=true`，目標速度 = max(自動或手動速度, 1 c)；放開即回復，沿用既有慣性（約 1 秒內衰減）。Shift 原本的「上升」別名移除（R 上升、F 下降不變），否則按住 Shift 會同時往上飄。碰撞／觀測邊界規則不變；光速拉絲特效由既有「速度 > 0.3 c」規則觸發。
+- 狀態列（`ui.setStatus`）：加速時顯示「（光速，按住 Shift）」與「光速為模擬效果」（目標速度 > 1 c 時仍顯示「超光速」）。底部按鍵提示加「按住 Shift 光速」。
+- `tools/boost_test.mjs`（無頭 Chromium，加入例行回歸）：手動 10 km/s 前進 → 按住 Shift 升到 ≥ 0.9 c、目標恰為 1 c、手動速度仍是 10 km/s、狀態列文字正確 → 放開後目標回 10 km/s、速度降到 < 0.3 c、狀態列回「（手動）」→ 自動模式＋Shift 目標 ≥ 1 c 且仍為自動 → 只按 Shift 不移動、不加速；console 0。
+- 已知限制：相對論效果未模擬（既有）；自動模式下的「原速」隨離天體距離成長，所以光速飛遠後放開 Shift 的自動速度可能已高於 1 c（既有自動速度設計）。真機未測。

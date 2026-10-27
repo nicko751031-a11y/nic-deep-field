@@ -25,6 +25,7 @@ export class Controls {
     this.joystick = { x: 0, y: 0 };
     this.vertical = 0;          // 觸控升降按鈕
     this.moving = false;
+    this.boost = false;         // 按住 Shift 且有移動輸入：目標速度提升到至少 1 c（模擬效果，放開即回復）
     this.enabled = true;
     this.pointerLocked = false;
     this.dragging = false;
@@ -147,20 +148,22 @@ export class Controls {
     if (yaw || pitch) { this._yawPitch(q, yaw, pitch); if (this.orbit) this.orbit.lookLocked = false; }
     if (roll) q.multiply(new THREE.Quaternion().setFromAxisAngle(new V3(0, 0, 1), roll));
     q.normalize();
-    // ---- 自動速度：依到最近天體邊界的距離
-    const distB = nearest ? Math.max(nearest.distToBoundary, 0) : 1e9;
-    const auto = clamp(distB * 0.35, 0.3, 3e12);
-    const targetSpeed = this.autoSpeed ? auto : this.manualSpeed;
-    this.currentSpeed = targetSpeed;
     // ---- 移動輸入（相機座標）
     const mv = new V3();
     if (this.keys.has('KeyW')) mv.z -= 1; if (this.keys.has('KeyS')) mv.z += 1;
     if (this.keys.has('KeyA')) mv.x -= 1; if (this.keys.has('KeyD')) mv.x += 1;
-    if (this.keys.has('KeyR') || this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) mv.y += 1;
+    if (this.keys.has('KeyR')) mv.y += 1;
     if (this.keys.has('KeyF') || this.keys.has('ControlLeft')) mv.y -= 1;
     mv.x += this.joystick.x; mv.z -= this.joystick.y; mv.y += this.vertical;
     const hasInput = mv.lengthSq() > 1e-6;
     if (hasInput) { if (mv.length() > 1) mv.normalize(); this.orbit = null; this.onUserMove?.(); }
+    // ---- 自動速度：依到最近天體邊界的距離；按住 Shift（光速）時至少 1 c
+    const distB = nearest ? Math.max(nearest.distToBoundary, 0) : 1e9;
+    const auto = clamp(distB * 0.35, 0.3, 3e12);
+    this.boost = hasInput && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
+    let targetSpeed = this.autoSpeed ? auto : this.manualSpeed;
+    if (this.boost) targetSpeed = Math.max(targetSpeed, C_KM_S);
+    this.currentSpeed = targetSpeed;
     const desired = mv.applyQuaternion(q).multiplyScalar(targetSpeed);
     // 慣性：有輸入時加速、無輸入時緩慢減速（像推進器關閉後仍漂浮，但為了可用性加入阻尼）
     const k = hasInput ? 1 - Math.exp(-dt * 4) : 1 - Math.exp(-dt * 2.5);

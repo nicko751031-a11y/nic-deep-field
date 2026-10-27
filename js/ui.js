@@ -1,5 +1,5 @@
 // DOM 介面：目的地、搜尋、資訊面板、狀態列、設定、提示
-import { fmtDist, fmtSpeed, fmtDateTime, fmtNum } from './units.js';
+import { fmtDist, fmtSpeed, fmtDateTime, fmtNum, C_KM_S } from './units.js';
 import { BODIES } from './bodies.js';
 
 const PROV_LABEL = { observed: '實際觀測影像', procedural: '程序模擬', schematic: '型態示意', speculative: '推測外觀', inferred: '資料推估', 'physics-approx': '物理近似' };
@@ -86,9 +86,9 @@ export class UI {
     for (const [label, fn] of actions || []) { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); box.appendChild(b); }
   }
 
-  setStatus({ speed, autoSpeed, target, dist, altitude, simTime, rate, frameLabel, frameNote, mode, fps, warp }) {
+  setStatus({ speed, autoSpeed, target, dist, altitude, simTime, rate, frameLabel, frameNote, mode, fps, warp, boost }) {
     this.status.innerHTML = [
-      ['s-speed', `速度 <b>${fmtSpeed(speed)}</b>${autoSpeed ? '（自動）' : '（手動）'}${warp ? ' <span style="color:var(--warn)">超光速為模擬效果</span>' : ''}`],
+      ['s-speed', `速度 <b>${fmtSpeed(speed)}</b>${boost ? '（光速，按住 Shift）' : autoSpeed ? '（自動）' : '（手動）'}${warp || boost ? ` <span style="color:var(--warn)">${speed > C_KM_S * 1.01 ? '超光速' : '光速'}為模擬效果</span>` : ''}`],
       ['s-target', target ? `目標 <b>${escapeHtml(target)}</b> 距中心 <b>${fmtDist(dist)}</b>${altitude != null ? ` · 高度 <b>${fmtDist(altitude)}</b>` : ''}` : ''],
       ['s-time', `模擬時間 <b>${fmtDateTime(new Date(simTime))}</b> ${rate === 0 ? '<span style="color:var(--warn)">暫停</span>' : rate === 1 ? '即時' : `×${fmtNum(rate)}`}`],
       ['s-frame', frameLabel ? `所在 <b>${escapeHtml(frameLabel)}</b>${frameNote ? ` <span style="color:var(--warn)">${escapeHtml(frameNote)}</span>` : ''}` : ''],
