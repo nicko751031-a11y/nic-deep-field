@@ -473,7 +473,12 @@ export class Engine {
   // dt：真實秒；回傳 nearest body 資訊供 UI 與控制使用
   update(dt) {
     this.elapsed += dt;
-    if (this.timeRate !== 0) this.simTime += dt * 1000 * this.timeRate;
+    // 模擬時鐘：倍率＝1（即時）時以牆鐘差推進，不受每幀 dt 上限 0.1 秒影響（低 fps 裝置或分頁回前景時不會落後真實時間）；
+    // 其他倍率仍以 dt × 倍率推進（暫停＝0）。
+    const wallNow = Date.now();
+    if (this.timeRate === 1) this.simTime += this._wallPrev ? Math.max(0, wallNow - this._wallPrev) : dt * 1000;
+    else if (this.timeRate !== 0) this.simTime += dt * 1000 * this.timeRate;
+    this._wallPrev = wallNow;
     const jd = ASTRO.jdFromDate(new Date(this.simTime));
     const cam = this.camPos;
     this.camera.quaternion.copy(this.camQuat);

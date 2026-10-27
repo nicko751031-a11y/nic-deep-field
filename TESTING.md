@@ -286,3 +286,9 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - **防護**（`earthlod.js` `_verifyTile`）：塊貼圖載入後先 `renderer.initTexture` 真正上傳，檢查 `gl.getError()`（含 `OUT_OF_MEMORY`），再畫到 4×4 暫存讀回，取樣全黑即判定「上傳後取樣為全黑」；兩者任一失敗都視同載入失敗：釋放貼圖、`uHasTile=0` 沿用 4K 底圖、走既有退避重試；`status()` 新增 `badUploads`／`failReasons`，`?diag=1` 分塊列顯示「上傳無效 n：原因×次數」。沒有 renderer（單元測試假引擎）時略過。
 - `tools/lod_black_tile_test.mjs`：route 把 L2_6_1 換成 2048² 全黑 PNG → 該塊 failed（原因「上傳後取樣為全黑」，請求 1 次）、補丁 `uHasTile=0`、L2_7_1 正常、`badUploads=1`、畫面平均亮度 0.259（不是黑畫面）、console 0。全部通過。
 - **仍未證實**：這只是讓「上傳失敗」不再表現為純黑，真機成因要靠負責人回報 `?nolod=1`／`?safe=1`／`?diag=1` 的結果；若黑區在 `?nolod=1` 仍在，成因在著色器而非分塊。iPhone Safari 真機未測。
+
+## 即時模式以牆鐘差推進模擬時鐘（2026-10-27 07:10 例行；AUDIT B6）
+
+- **問題**：`engine.update(dt)` 的 `dt` 每幀上限 0.1 秒；倍率＝1（即時）時模擬時鐘以 `dt` 推進，< 10 fps 的裝置（或分頁回前景）會落後真實時間，HUD 卻仍顯示「即時」；近即時紅外線閘門（|現在 − 模擬時刻| ≤ 60 秒）也可能因此失效。軟體繪圖約 1 fps 時每秒落後約 0.9 秒。
+- **修正**：倍率＝1 時以 `Date.now()` 差推進；暫停與其他倍率仍以 `dt × 倍率` 推進（不改變快轉行為）。快轉後切回即時仍保留偏移（連續，不跳回現在）。
+- `tools/realtime_clock_test.mjs`：即時 6 秒偏移變化 < 1 秒、暫停不動、×60 前進、快轉後切回即時偏移保留、按「現在」後 3 秒偏移 < 1.5 秒。

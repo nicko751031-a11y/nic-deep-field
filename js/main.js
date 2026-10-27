@@ -394,6 +394,7 @@ async function boot() {
   const resume = readResume();
   const resumed = !!(resume && applyResume(resume));
   if (!resumed) {
+    engine.simTime = Date.now(); // 載入貼圖期間時鐘未推進，開場時把「即時」對齊現在（B6）
     goTo(catalog.entries.find((e) => e.kind === 'body' && e.id === 'earth'), { instant: true });
     openingView();
   }
