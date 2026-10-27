@@ -17,6 +17,10 @@
 <meta property="og:type" content="website">
 <meta property="og:image" content="docs/screens/opening.jpg">
 <link rel="stylesheet" href="css/app.css">
+<!-- importmap 必須在任何模組預載之前：預載的模組一完成下載就會解析其 import 的裸名「three」，若此時 importmap 尚未登錄會解析失敗並讓整個模組圖報錯（第二次造訪、快取命中時必現，畫面停在「初始化…」） -->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
 <!-- 模組預載（AUDIT B4）：main.js 的靜態 import 圖一次並行下載，避免逐層瀑布；清單由 tools/test_modulepreload.mjs 與 import 圖比對 -->
 <link rel="modulepreload" href="vendor/three/three.module.js">
 <link rel="modulepreload" href="js/astro.js">
@@ -35,9 +39,6 @@
 <link rel="modulepreload" href="js/textures.js">
 <link rel="modulepreload" href="js/ui.js">
 <link rel="modulepreload" href="js/units.js">
-<script type="importmap">
-{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
-</script>
 </head>
 <body>
 <canvas id="gl"></canvas>

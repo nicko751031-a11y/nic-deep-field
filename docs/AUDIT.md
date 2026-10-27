@@ -21,6 +21,7 @@
 | A9 | 分塊首次載入失敗後永久停留 4K，無重試 | ✅ 退避重試 5 次後放棄＋手動重試（GPT Issue #16 發現） | Claude | `lod_retry_test` 通過。 |
 | A10 | 觀測面板「重新讀取」競態：舊回應蓋掉新狀態 | ✅ 序號守衛（GPT Issue #8 發現） | Claude | `observe_race_test` 通過。 |
 | A11 | 音訊同模式 ABA 競態（舊操作清掉新 pending） | ✅ 操作序號（GPT 第三次稽核） | Claude | `audio_ui_test` ABA／反向完成序通過。 |
+| A12 | 第二次造訪／重新整理停在「初始化…」：`modulepreload` 放在 importmap 之前，快取命中時裸名 `three` 解析失敗（PR #42 引入，09:58–上架期間正式站受影響） | ✅ 11:4x 熱修 | Claude | importmap 移到預載標籤之前；`tools/reload_test.mjs` 加入例行回歸（重載、同頁導向 `?diag=1`）。教訓記入 H2：上架前回歸須包含重載路徑且必須跑完。 |
 
 ## B. 效能
 
@@ -29,7 +30,7 @@
 | B1 | 眩光／拉絲的 2D 畫布每幀整張 `clearRect`，沒有效果時也在畫 | ✅ 本輪 | Claude | 無需重畫時跳過，省手機電力。 |
 | B2 | 地球片段著色器每像素兩次 3D 雜訊、4K 法線貼圖，中低階手機偏重 | 📋 | Claude | 低畫質已關法線；可再把程序細節在低畫質關閉；需真機 FPS 數據。 |
 | B3 | 黑洞光線追蹤步數 380–900，低階手機掉幀 | ✅ 既有自適應 | — | 掉幀自動減步數。 |
-| B4 | 首次載入約 30 MB（4K 貼圖 ×4、星圖、星表） | ✅ 部分（09:10） | Claude | `index.html` 加 `modulepreload`（main.js 靜態 import 圖 17 個模組＋three.module.js）消除模組逐層瀑布；`tools/test_modulepreload.mjs` 比對清單與 import 圖。貼圖／星表體積本身未變（夜燈／法線延後載入、底圖縮小待分塊 LOD 穩定後評估）。 |
+| B4 | 首次載入約 30 MB（4K 貼圖 ×4、星圖、星表） | ✅ 部分（09:10） | Claude | `index.html` 加 `modulepreload`（main.js 靜態 import 圖 17 個模組＋three.module.js）消除模組逐層瀑布；`tools/test_modulepreload.mjs` 比對清單與 import 圖（importmap 須在預載之前，見 A12）。貼圖／星表體積本身未變（夜燈／法線延後載入、底圖縮小待分塊 LOD 穩定後評估）。 |
 | B5 | 標籤每 120 ms 更新 DOM | ✅ 可接受 | — | 已節流。 |
 | B6 | 「即時」模擬時鐘以每幀 dt（上限 0.1 秒）推進，< 10 fps 的裝置或分頁回前景後會落後真實時間（HUD 仍顯示「即時」） | ✅ 07:10 | Claude | 倍率＝1 時改以牆鐘差推進（`engine.update`），其他倍率不變；`tools/realtime_clock_test.mjs`。軟體繪圖下修正前 6 秒落後約 5 秒。 |
 
@@ -93,7 +94,7 @@
 | # | 缺點 | 狀態 | 說明 |
 |---|---|---|---|
 | H1 | 兩個 AI 曾同時改同一檔（`earthlod.js`） | ✅ 協定 | Issue #8 宣告制；Claude 已把 GPT 的建議改在自己的檔案裡。 |
-| H2 | 部署前沒有自動回歸 | 📋 | 規劃 Actions：鏡像同步前跑 `browser_test.mjs`＋`nan_sweep.mjs`。 |
+| H2 | 部署前沒有自動回歸 | 📋 | 規劃 Actions：鏡像同步前跑 `browser_test.mjs`＋`nan_sweep.mjs`＋`reload_test.mjs`。A12 的教訓：回歸被中斷就視同未通過，不得同步鏡像；單次載入通過不代表重載通過。 |
 | H3 | 暫存分支（`assets/earth-tiles-*`）未清 | 📋 | 合併 PR #19 後刪除。 |
 
 ## 本輪（`claude/stability-flicker`）變更摘要

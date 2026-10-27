@@ -295,6 +295,13 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 
 ## 模組預載（2026-10-27 09:10 例行；AUDIT B4）
 
-- `index.html` `<head>` 加 `<link rel="modulepreload">`：`main.js` 靜態 import 圖的 17 個模組＋`vendor/three/three.module.js`，放在 importmap 之前。瀏覽器一次並行下載，不再依 import 逐層發現（`diag.js` 動態載入不預載）。
-- `tools/test_modulepreload.mjs`（單元）：清單＝import 圖＋three（多了或少了都失敗）、檔案存在、位於 importmap 之前。
+- `index.html` `<head>` 加 `<link rel="modulepreload">`：`main.js` 靜態 import 圖的 17 個模組＋`vendor/three/three.module.js`。瀏覽器一次並行下載，不再依 import 逐層發現（`diag.js` 動態載入不預載）。
+- `tools/test_modulepreload.mjs`（單元）：清單＝import 圖＋three（多了或少了都失敗）、檔案存在、importmap 位於所有預載標籤之前（見下節事故）。
 - `tools/preload_timing.mjs`：由 Resource Timing 列出各模組 fetchStart 與「發現層數」；數字見下方留存。
+
+## 事故：第二次造訪停在「初始化…」（2026-10-27 11:4x 熱修；AUDIT A12）
+
+- **症狀**：首次造訪正常；重新整理或再次進站（模組已在快取）時 `Failed to resolve module specifier "three"`，整個模組圖報錯，畫面停在「初始化…」。09:58 上架的模組預載版（PR #42）即有此問題，上架前的回歸只做單次載入所以沒抓到；上架後的全套回歸因容器重啟中斷，`settings_resume_test`（會重載）的失敗沒被看到。
+- **原因**：`<link rel="modulepreload">` 放在 `<script type="importmap">` 之前。預載的模組一下載完就解析其 `import 'three'`，快取命中時這發生在 importmap 登錄之前，裸名解析失敗並記錄在模組表；之後 `main.js` 的正式 import 取回的是已出錯的模組。首次造訪因為下載較慢、importmap 先登錄而僥倖通過。
+- **修正**：importmap 移到所有預載標籤之前；`test_modulepreload.mjs` 的順序斷言反轉（原本斷言錯誤方向）。
+- `tools/reload_test.mjs`（無頭 Chromium，新；加入例行回歸）：首次造訪 → 重新整理（快取命中）→ 同頁導向 `?diag=1`（診斷層存在）→ 無參數再造訪，每次都須在 90 秒內完成初始化、console／page 錯誤 0。修正前第二步停在「初始化…」。

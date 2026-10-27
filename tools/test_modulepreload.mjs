@@ -24,6 +24,6 @@ test('modulepreload 清單 = main.js 靜態 import 圖 + three.module.js', () =>
 test('每個預載檔案都存在', () => {
   for (const l of links) assert.ok(fs.existsSync(path.join(root, l)), `找不到 ${l}`);
 });
-test('預載標籤位於 importmap 之前（讓 three 的裸名解析先就緒）', () => {
-  assert.ok(html.indexOf('rel="modulepreload"') < html.indexOf('<script type="importmap">'));
+test('importmap 位於所有預載標籤之前（否則快取命中時裸名 three 解析失敗、頁面停在初始化）', () => {
+  assert.ok(html.indexOf('<script type="importmap">') < html.indexOf('rel="modulepreload"'));
 });
