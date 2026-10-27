@@ -292,3 +292,9 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - **問題**：`engine.update(dt)` 的 `dt` 每幀上限 0.1 秒；倍率＝1（即時）時模擬時鐘以 `dt` 推進，< 10 fps 的裝置（或分頁回前景）會落後真實時間，HUD 卻仍顯示「即時」；近即時紅外線閘門（|現在 − 模擬時刻| ≤ 60 秒）也可能因此失效。軟體繪圖約 1 fps 時每秒落後約 0.9 秒。
 - **修正**：倍率＝1 時以 `Date.now()` 差推進；暫停與其他倍率仍以 `dt × 倍率` 推進（不改變快轉行為）。快轉後切回即時仍保留偏移（連續，不跳回現在）。
 - `tools/realtime_clock_test.mjs`：即時 6 秒偏移變化 < 1 秒、暫停不動、×60 前進、快轉後切回即時偏移保留、按「現在」後 3 秒偏移 < 1.5 秒。
+
+## 模組預載（2026-10-27 09:10 例行；AUDIT B4）
+
+- `index.html` `<head>` 加 `<link rel="modulepreload">`：`main.js` 靜態 import 圖的 17 個模組＋`vendor/three/three.module.js`，放在 importmap 之前。瀏覽器一次並行下載，不再依 import 逐層發現（`diag.js` 動態載入不預載）。
+- `tools/test_modulepreload.mjs`（單元）：清單＝import 圖＋three（多了或少了都失敗）、檔案存在、位於 importmap 之前。
+- `tools/preload_timing.mjs`：由 Resource Timing 列出各模組 fetchStart 與「發現層數」；數字見下方留存。

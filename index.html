@@ -17,6 +17,24 @@
 <meta property="og:type" content="website">
 <meta property="og:image" content="docs/screens/opening.jpg">
 <link rel="stylesheet" href="css/app.css">
+<!-- 模組預載（AUDIT B4）：main.js 的靜態 import 圖一次並行下載，避免逐層瀑布；清單由 tools/test_modulepreload.mjs 與 import 圖比對 -->
+<link rel="modulepreload" href="vendor/three/three.module.js">
+<link rel="modulepreload" href="js/astro.js">
+<link rel="modulepreload" href="js/audio.js">
+<link rel="modulepreload" href="js/bodies.js">
+<link rel="modulepreload" href="js/catalog.js">
+<link rel="modulepreload" href="js/controls.js">
+<link rel="modulepreload" href="js/earthlayers.js">
+<link rel="modulepreload" href="js/earthlod.js">
+<link rel="modulepreload" href="js/earthview.js">
+<link rel="modulepreload" href="js/earthweather.js">
+<link rel="modulepreload" href="js/earthwx.js">
+<link rel="modulepreload" href="js/engine.js">
+<link rel="modulepreload" href="js/observe.js">
+<link rel="modulepreload" href="js/shaders.js">
+<link rel="modulepreload" href="js/textures.js">
+<link rel="modulepreload" href="js/ui.js">
+<link rel="modulepreload" href="js/units.js">
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
 </script>
