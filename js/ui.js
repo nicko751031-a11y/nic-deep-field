@@ -32,21 +32,26 @@ export class UI {
   }
 
   bindSearch(catalog, onPick) {
+    // 無障礙（AUDIT F2）：輸入框＝combobox、結果＝listbox、每筆＝option；展開狀態與鍵盤選擇以 aria-expanded／aria-activedescendant／aria-selected 同步
+    this.q.setAttribute('role', 'combobox'); this.q.setAttribute('aria-autocomplete', 'list'); this.q.setAttribute('aria-controls', 'results'); this.q.setAttribute('aria-expanded', 'false');
+    if (!this.q.getAttribute('aria-label')) this.q.setAttribute('aria-label', '搜尋天體');
+    this.results.setAttribute('role', 'listbox');
     const render = (items, query) => {
-      this.lastResults = items; this.selIndex = -1; this.results.innerHTML = '';
-      if (!query) { this.results.classList.remove('open'); return; }
+      this.lastResults = items; this.selIndex = -1; this.results.innerHTML = ''; this.q.removeAttribute('aria-activedescendant');
+      if (!query) { this.closeResults(); return; }
       if (!items.length) {
         const c = catalog.meta?.counts || {};
-        this.results.innerHTML = `<div class="empty">未收錄：「${escapeHtml(query)}」。目前收錄 ${fmtNum(c.stars_searchable || 0)} 顆可搜尋恆星、${fmtNum(c.dso || 0)} 個 NGC/IC 深空天體、${fmtNum(c.exoplanets || 0)} 顆系外行星、${catalog.entries.filter((e) => e.kind === 'bh').length} 個黑洞與太陽系 11 個天體。不會虛構天體。</div>`;
-        this.results.classList.add('open'); return;
+        this.results.innerHTML = `<div class="empty" role="status">未收錄：「${escapeHtml(query)}」。目前收錄 ${fmtNum(c.stars_searchable || 0)} 顆可搜尋恆星、${fmtNum(c.dso || 0)} 個 NGC/IC 深空天體、${fmtNum(c.exoplanets || 0)} 顆系外行星、${catalog.entries.filter((e) => e.kind === 'bh').length} 個黑洞與太陽系 11 個天體。不會虛構天體。</div>`;
+        this.results.classList.add('open'); this.q.setAttribute('aria-expanded', 'true'); return;
       }
       for (const [i, e] of items.entries()) {
-        const d = document.createElement('div'); d.className = 'r'; d.innerHTML = `<span>${escapeHtml(e.zh)}</span><small>${escapeHtml(e.sub)}</small>`;
+        const d = document.createElement('div'); d.className = 'r'; d.id = `r-${i}`; d.setAttribute('role', 'option'); d.setAttribute('aria-selected', 'false');
+        d.innerHTML = `<span>${escapeHtml(e.zh)}</span><small>${escapeHtml(e.sub)}</small>`;
         d.addEventListener('mousedown', (ev) => { ev.preventDefault(); onPick(e); this.closeResults(); });
         d.addEventListener('touchend', (ev) => { ev.preventDefault(); onPick(e); this.closeResults(); });
-        this.results.appendChild(d); void i;
+        this.results.appendChild(d);
       }
-      this.results.classList.add('open');
+      this.results.classList.add('open'); this.q.setAttribute('aria-expanded', 'true');
     };
     let timer = null;
     this.q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => render(catalog.search(this.q.value), this.q.value.trim()), 80); });
@@ -60,8 +65,11 @@ export class UI {
       e.stopPropagation();
     });
   }
-  _hl() { [...this.results.children].forEach((c, i) => c.classList.toggle('sel', i === this.selIndex)); }
-  closeResults() { this.results.classList.remove('open'); }
+  _hl() {
+    [...this.results.children].forEach((c, i) => { const on = i === this.selIndex; c.classList.toggle('sel', on); if (c.getAttribute('role') === 'option') c.setAttribute('aria-selected', String(on)); if (on) c.scrollIntoView?.({ block: 'nearest' }); });
+    if (this.selIndex >= 0 && this.results.children[this.selIndex]) this.q.setAttribute('aria-activedescendant', this.results.children[this.selIndex].id); else this.q.removeAttribute('aria-activedescendant');
+  }
+  closeResults() { this.results.classList.remove('open'); this.q.setAttribute('aria-expanded', 'false'); this.q.removeAttribute('aria-activedescendant'); }
 
   showInfo(info, actions) {
     this.info.style.display = '';

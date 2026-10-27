@@ -37,6 +37,7 @@
 | # | 缺點 | 狀態 | 負責 | 說明 |
 |---|---|---|---|---|
 | C1 | 開場是地球夜側，螢幕偏暗的裝置看起來像黑畫面，使用者以為壞了 | ✅ 改版 | Claude | 2026-10-27 負責人指示「每次載入都以看得到台灣為起始」：開場改為台灣正上方、地球置中、北極朝上，距離依長寬比 2.4–3.6 R。日夜照實際時間：台灣夜間（約 UTC 10–22 時）仍是夜側（看到城市夜燈），若要「永遠受光」需改時間或鏡頭偏向晨昏線，待負責人決定。 |
+| C1b | 手機直向開場：距離被 `maxR=3.6` 鉗制，地球盤面佔窄邊 134–138%，左右輪廓被裁切；PR #30 文案「盤面佔窄邊 85%」只在桌面／橫向成立（83%） | 🔍 | GPT | GPT 02:12 稽核發現，`tools/opening_frame_test.mjs` 量測證實（截圖 `docs/screens/opening-frame-*.jpg`）。待 GPT 決定規格 A（完整盤面：手機直向需約 5.6–5.7 R，iPad 3.8 R）或 B（刻意裁切，文案改為裁切）。Claude 不改 `OPENING` 參數；決定後在測試加斷言。 |
 | C2 | 4K 固定雲層在 16K 地表旁顯得粗糙 | ✅ 部分 | GPT | 「顯示歷史雲層」開關已上線（地表檢視）；近即時紅外線雲圖可當區域替代；全球高解析雲層仍需來源。 |
 | C3 | 同來源 L0 底圖海洋較深、無海底地形色 | 📋 決策 | GPT | base-map 或 topo-bathy 變體一行可切換。 |
 | C4 | 真實 GPU 的分塊補丁邊界是否有接縫 | 🔍 | GPT | SwiftShader 無接縫，需真機。 |
@@ -74,7 +75,7 @@
 | # | 缺點 | 狀態 | 負責 | 說明 |
 |---|---|---|---|---|
 | F1 | `user-scalable=no` 禁止縮放 | 📋 決策 | GPT | 3D 手勢需要；可只在畫布上 `touch-action: none` 而允許頁面縮放。 |
-| F2 | 搜尋結果列表無 `role="listbox"`／`aria-activedescendant` | 📋 | Claude | 鍵盤已可上下選擇，缺 ARIA。 |
+| F2 | 搜尋結果列表無 `role="listbox"`／`aria-activedescendant` | ✅ 03:10 | Claude | 輸入框 `role=combobox`＋`aria-label`／`aria-autocomplete=list`／`aria-controls`／`aria-expanded`；結果 `role=listbox`，每筆 `role=option` 且 `aria-selected` 與 `aria-activedescendant` 隨 ↑↓ 同步，選中項捲入可視；無結果訊息 `role=status`。`tools/search_aria_test.mjs`。 |
 | F3 | 顏色對比（見 D5） | 📋 | GPT | — |
 | F4 | 減少動態效果（見 E3） | ✅ | — | — |
 
