@@ -367,6 +367,7 @@ async function boot() {
     onInvert: (v) => { controls.invertY = v; },
     onFov: (v) => { engine.camera.fov = v; engine.camera.updateProjectionMatrix(); },
     onBeforeReload: saveResume, onResetAll: resetAllSettings,
+    onReport: async () => { const d = await import('./diag.js'); return d.quickReport(engine, { quality, extra: { safe, prefs, loadErrors: errors.slice(0, 20), target: controls.target, audio: audio.mode } }); },
     onAudio: async (v) => { const r = await startAudio(v); if (r?.ok && v === 'sonify' && r.table) $('s-audio-note').innerHTML += '<br>目前音高：' + r.table.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); },
   });
   syncAudioUI(); // 開頁時音訊為 off：選單與按鈕都顯示未播放，不預先顯示音景已選

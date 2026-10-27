@@ -3,11 +3,12 @@
 // 其他網址參數：?quality=low|medium|high（覆蓋畫質）、?nolog=1（關閉對數深度緩衝，需重新載入）
 const $ = (id) => document.getElementById(id);
 
-export function initDiag(engine, controls, { quality } = {}) {
+// GPU／WebGL 能力表（診斷覆蓋層與設定面板「回報問題」共用）
+export function collectCaps(engine, quality) {
   const gl = engine.renderer.getContext();
   const dbg = gl.getExtension('WEBGL_debug_renderer_info');
   const prec = (sh, t) => { const f = gl.getShaderPrecisionFormat(sh, t); return f ? `${f.precision}b [${f.rangeMin},${f.rangeMax}]` : '?'; };
-  const caps = {
+  return {
     renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '（瀏覽器未揭露）', vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : '',
     webgl: gl.getParameter(gl.VERSION), glsl: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
     depthBits: gl.getParameter(gl.DEPTH_BITS), maxTex: gl.getParameter(gl.MAX_TEXTURE_SIZE), maxVarying: gl.getParameter(gl.MAX_VARYING_VECTORS), maxFragUniforms: gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS),
@@ -16,6 +17,23 @@ export function initDiag(engine, controls, { quality } = {}) {
     dpr: window.devicePixelRatio, pixelRatio: engine.renderer.getPixelRatio(), drawingBuffer: `${gl.drawingBufferWidth}×${gl.drawingBufferHeight}`,
     quality, logDepth: engine.renderer.capabilities.logarithmicDepthBuffer, cores: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory ?? '?', ua: navigator.userAgent,
   };
+}
+
+// 報告內容（JSON）：診斷覆蓋層的「產生／複製報告」與設定面板的「回報問題」共用；state／flags 沒有診斷層時為空
+export function buildReport(engine, { caps, state = {}, flags = null, extra = {} } = {}) {
+  return JSON.stringify({ time: new Date().toISOString(), url: location.href, caps, flags, fps: state.fps !== undefined ? { avg: state.fps, min: state.fpsMin } : null, earthLod: engine.earthLod?.status() || null, frame: engine.renderer.info.render, memory: engine.renderer.info.memory, programs: engine.renderer.info.programs?.length, jsHeapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, contextLost: state.lost ?? null, engineContextLost: engine.contextLost, degrade: engine.degrade, pixelRatioNow: engine.renderer.getPixelRatio(), post: engine.postOn, nan: state.nanScans !== undefined ? { scans: state.nanScans, pixels: state.nanPixels, first: state.nanFirst || null } : null, blackFrames: state.blackFrames ?? null, coverage: state.coverage || null, lumaMax: state.lumaMax ?? null, shaderErrors: state.errors || engine.shaderErrors || [], consoleErrors: state.consoleErrors || [], frameType: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)), simTime: new Date(engine.simTime).toISOString(), timeRate: engine.timeRate, ...extra }, null, 1);
+}
+
+// 設定面板「回報問題」（AUDIT A6）：不開診斷覆蓋層，直接產生報告並嘗試複製到剪貼簿；回傳 { text, copied }
+export async function quickReport(engine, { quality, extra } = {}) {
+  const text = buildReport(engine, { caps: collectCaps(engine, quality), extra });
+  let copied = false; try { await navigator.clipboard.writeText(text); copied = true; } catch (e) { /* iOS 可能拒絕，由文字框手動複製 */ }
+  return { text, copied };
+}
+
+export function initDiag(engine, controls, { quality } = {}) {
+  const gl = engine.renderer.getContext();
+  const caps = collectCaps(engine, quality);
   const state = { lost: 0, errors: engine.shaderErrors || [], consoleErrors: [], fps: 0, fpsMin: 999, frame: 0, t0: performance.now(), samples: [], nanPixels: 0, nanScans: 0, blackFrames: 0, lumaMax: 0, lumaLast: 0 };
   engine.canvas.addEventListener('webglcontextlost', () => { state.lost++; }, false);
   const origErr = console.error.bind(console);
@@ -59,7 +77,7 @@ export function initDiag(engine, controls, { quality } = {}) {
 
   // ---- 報告（複製到剪貼簿 ＋ 文字框）
   const ta = document.createElement('textarea'); ta.style.cssText = 'width:100%;height:90px;font:10px monospace;background:#000;color:#9fd9b4;border:1px solid rgba(255,255,255,.2);margin-top:6px'; ta.readOnly = true;
-  const report = () => JSON.stringify({ time: new Date().toISOString(), caps, flags, fps: { avg: state.fps, min: state.fpsMin }, earthLod: engine.earthLod?.status() || null, frame: engine.renderer.info.render, memory: engine.renderer.info.memory, programs: engine.renderer.info.programs?.length, jsHeapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, contextLost: state.lost, engineContextLost: engine.contextLost, degrade: engine.degrade, pixelRatioNow: engine.renderer.getPixelRatio(), post: engine.postOn, nan: { scans: state.nanScans, pixels: state.nanPixels, first: state.nanFirst || null }, blackFrames: state.blackFrames, coverage: state.coverage || null, lumaMax: state.lumaMax, shaderErrors: state.errors, consoleErrors: state.consoleErrors, frameType: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) }, null, 1);
+  const report = () => buildReport(engine, { caps, state, flags });
   box.appendChild(btn('產生／複製報告', async () => { const r = report(); ta.value = r; ta.style.display = ''; try { await navigator.clipboard.writeText(r); ta.value = '（已複製到剪貼簿）\n' + r; } catch (e) { /* iOS 可能拒絕，改由文字框手動複製 */ } }));
   box.appendChild(btn('隱藏診斷', () => { box.style.display = 'none'; }));
   ta.style.display = 'none'; box.appendChild(ta);

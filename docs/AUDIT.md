@@ -15,7 +15,7 @@
 | A3 | 未經瀏覽器回歸就部署（`f2faced` 事件，正式站行星消失約 2 小時） | 正式站壞掉 | ✅ 流程 | GPT／Claude | 已在 Issue #8 要求：推送鏡像前至少跑 `tools/browser_test.mjs` 或 `?diag=1` 看 shader 錯誤 0；Claude 每 2 分鐘檢查。建議再加 GitHub Actions 在鏡像同步前自動跑回歸（📋）。 |
 | A4 | 地球 16K 分塊在手機 128 MB 只是軟上限 | 記憶體爆 | ✅ `e2ab913` | Claude | 兩道硬上限，壓力測試 0 次超出。 |
 | A5 | 換用同來源底圖後原 4K 貼圖未釋放（約 45 MB） | 記憶體 | ✅ `9988e08` | Claude | — |
-| A6 | 沒有自動錯誤回報；問題只能靠負責人口述 | 排查慢 | 📋 | Claude | 不加第三方追蹤（隱私、純靜態）；規劃「回報問題」按鈕：把 `?diag=1` 報告以 mailto／複製方式交給負責人。 |
+| A6 | 沒有自動錯誤回報；問題只能靠負責人口述 | 排查慢 | ✅ 11:10 | Claude | 設定面板「回報問題」：產生與 `?diag=1` 同格式的 JSON（GPU 能力、像素比、畫質、安全模式、分塊狀態、shader 錯誤、載入失敗、相機位置、模擬時刻、偏好；不含個資、不用 mailto、不加第三方追蹤），複製到剪貼簿並顯示文字框。`tools/report_button_test.mjs`。 |
 | A7 | 真機（iPhone／iPad Safari、Android Chrome）從未有系統性驗收 | 所有手機問題都靠回報 | 📋 | 負責人＋GPT | 需要一份固定的真機檢查清單（TESTING.md 已有 iPhone 清單）與每次部署前執行。 |
 | A8 | WebAudio 啟動狀態與介面不同步（`resume()` 未 await；選單預設顯示音景） | ✅ `audio.start()`＋`syncAudioUI`（GPT QA 發現） | Claude | 單元 9 項＋瀏覽器假 AudioContext 測試通過；iOS 真機未測。 |
 | A9 | 分塊首次載入失敗後永久停留 4K，無重試 | ✅ 退避重試 5 次後放棄＋手動重試（GPT Issue #16 發現） | Claude | `lod_retry_test` 通過。 |

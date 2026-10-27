@@ -142,6 +142,8 @@ export class UI {
       ${row('安全模式（畫面閃爍或黑屏時：關閉泛光、後製、對數深度，像素比 1）', `<input type="checkbox" id="s-safe" ${opts.safe ? 'checked' : ''}>`)}
       <div class="sub">安全模式與畫質切換會重新載入，目前位置與時間會保留。仍有問題請開啟 <a href="?diag=1">GPU 診斷模式</a>，按「產生／複製報告」把內容貼給我們。</div>
       ${row('重設所有設定（畫質、安全模式、電影式偏好；會重新載入並回到開場）', `<button type="button" id="s-reset">重設</button>`)}
+      ${row('回報問題（產生裝置與畫面狀態報告，不含個資；請貼給負責人）', `<button type="button" id="s-report">產生報告</button>`)}
+      <textarea id="s-report-out" readonly hidden style="width:100%;height:110px;font:10px monospace;background:#000;color:#9fd9b4;border:1px solid var(--line);margin:4px 0 8px" aria-label="問題報告內容"></textarea>
       ${row('曝光', `<select id="s-exposure"><option value="auto">自動（靠近亮天體時星空變暗）</option><option value="stars">星空優先</option><option value="bodies">天體優先</option></select>`)}
       ${row('顯示天體標籤', `<input type="checkbox" id="s-labels" checked>`)}
       ${row('金星顯示 Magellan 雷達地形（非肉眼所見）', `<input type="checkbox" id="s-venus">`)}
@@ -171,6 +173,7 @@ export class UI {
     $('s-quality').addEventListener('change', (e) => { localStorage.setItem('ndf-quality', e.target.value); opts.onBeforeReload?.(); const u = new URL(location.href); u.searchParams.delete('quality'); location.href = u.toString(); });
     $('s-safe').addEventListener('change', (e) => { opts.onBeforeReload?.(); const u = new URL(location.href); if (e.target.checked) u.searchParams.set('safe', '1'); else u.searchParams.delete('safe'); location.href = u.toString(); });
     $('s-reset').addEventListener('click', () => { if (window.confirm('清除所有已儲存的設定（畫質、安全模式、電影式偏好）並重新載入？')) opts.onResetAll?.(); });
+    $('s-report').addEventListener('click', async () => { const out = $('s-report-out'); const b = $('s-report'); b.disabled = true; out.hidden = false; out.value = '產生中…'; try { const r = await opts.onReport?.(); out.value = (r?.copied ? '（已複製到剪貼簿）\n' : '（請長按／全選複製下面內容）\n') + (r?.text || '（無法產生報告）'); } catch (e) { out.value = '產生報告失敗：' + (e?.message || e); } finally { b.disabled = false; } });
     $('s-exposure').addEventListener('change', (e) => opts.onExposure(e.target.value));
     $('s-labels').addEventListener('change', (e) => opts.onLabels(e.target.checked));
     $('s-venus').addEventListener('change', (e) => opts.onVenus(e.target.checked));

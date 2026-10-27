@@ -299,6 +299,12 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - `tools/test_modulepreload.mjs`（單元）：清單＝import 圖＋three（多了或少了都失敗）、檔案存在、importmap 位於所有預載標籤之前（見下節事故）。
 - `tools/preload_timing.mjs`：由 Resource Timing 列出各模組 fetchStart 與「發現層數」；數字見下方留存。
 
+## 設定面板「回報問題」（2026-10-27 11:10 例行；AUDIT A6）
+
+- `diag.js` 抽出 `collectCaps`／`buildReport`／`quickReport`：診斷覆蓋層的「產生／複製報告」與設定面板「回報問題」共用同一報告格式；沒有診斷層時 `fps`／`nan`／`blackFrames` 為 `null`（不偽造即時數據）。
+- `ui.js` 設定面板加「回報問題」列與唯讀文字框；`main.js` 的 `onReport` 動態載入 `diag.js` 並附 `safe`／`prefs`／`loadErrors`／`target`／`audio`。不含個資、不用 mailto、不加第三方追蹤。
+- `tools/report_button_test.mjs`：按鈕可用、文字框顯示、內容為 JSON 且含必要欄位、剪貼簿有報告（無頭 Chromium 授權）、不含 mailto／電子郵件、`?diag=1` 的報告仍可用且含即時數據、console 0。
+
 ## 事故：第二次造訪停在「初始化…」（2026-10-27 11:4x 熱修；AUDIT A12）
 
 - **症狀**：首次造訪正常；重新整理或再次進站（模組已在快取）時 `Failed to resolve module specifier "three"`，整個模組圖報錯，畫面停在「初始化…」。09:58 上架的模組預載版（PR #42）即有此問題，上架前的回歸只做單次載入所以沒抓到；上架後的全套回歸因容器重啟中斷，`settings_resume_test`（會重載）的失敗沒被看到。
