@@ -258,7 +258,9 @@ async function boot() {
 
   // 設定重載時保留位置（AUDIT D6）：畫質／安全模式切換會整頁重載。重載前把目前目的地、相對目標天體的位置、朝向、
   // 時間與環繞狀態寫到 sessionStorage（只在同一分頁、120 秒內有效），載入後還原，不再回到開場。
-  // 位置存「相對目標天體」而非絕對座標：重載期間天體仍照星曆移動，還原時才不會漂移；時間倍率＝即時時不回寫 simTime，維持真正的現在。
+  // 位置存「相對目標天體」而非絕對座標：重載期間天體仍照星曆移動，還原時才不會漂移。
+  // 時間存「模擬時刻＋速率」兩個維度（GPT 03:16 稽核：速率＝1 不代表模擬時刻＝現在，快轉後切回即時再重載不可跳回現在）：
+  // 還原為 simTime + 重載經過的秒數 × timeRate —— 即時保留原本的時間偏移並連續前進、暫停不動、加速按速率進時，不會瞬間跳數天。
   const RESUME_KEY = 'ndf-resume';
   function saveResume() {
     try {
@@ -282,7 +284,10 @@ async function boot() {
   function applyResume(r) {
     const entry = catalog.entries.find((e) => e.kind === r.entry.kind && e.id === r.entry.id); if (!entry) return false;
     goTo(entry, { instant: true });
-    if (Number.isFinite(r.timeRate) && r.timeRate !== 1 && Number.isFinite(r.simTime)) { engine.simTime = r.simTime; engine.timeRate = r.timeRate; const sel = $('rate'); if ([...sel.options].some((o) => o.value === String(r.timeRate))) sel.value = String(r.timeRate); }
+    if (Number.isFinite(r.timeRate) && Number.isFinite(r.simTime)) {
+      engine.simTime = r.simTime + Math.max(0, Date.now() - r.t) * r.timeRate; engine.timeRate = r.timeRate;
+      const sel = $('rate'); if ([...sel.options].some((o) => o.value === String(r.timeRate))) sel.value = String(r.timeRate);
+    }
     engine.update(0);
     const body = engine.frame.type === 'solar' && r.rel ? engine.bodies.get(r.target) : null;
     engine.camPos = body ? [body.pos[0] + r.rel[0], body.pos[1] + r.rel[1], body.pos[2] + r.rel[2]] : r.camPos.slice();
