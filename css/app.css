@@ -109,8 +109,9 @@ body.idle canvas#gl { cursor: none; }
 .vbtns { position: absolute; right: calc(14px + var(--sar)); bottom: calc(150px + var(--sab)); display: flex; flex-direction: column; gap: 8px; pointer-events: auto; }
 .vbtns button { width: 50px; height: 50px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); font-size: 16px; color: var(--fg); }
 /* 觸控裝置：目的地單列橫向捲動、資訊面板可收合，讓畫面中央留給觸控 */
-.touch .dest { width: auto; max-width: 100%; }
-.touch .dest .list { display: flex; overflow-x: auto; gap: 14px; scrollbar-width: none; padding-bottom: 2px; }
+.touch #hud .dest { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; } /* 需蓋過 #hud .dest { width:170px } 的 id 專一性 */ /* min-width:0：grid 項目預設 min-content 寬度會撐到比螢幕寬，列表就沒有可捲動的溢位（負責人 2026-10-27 回報：滑到金星就停） */
+.touch .mid { min-width: 0; max-width: 100%; }
+.touch .dest .list { display: flex; overflow-x: auto; gap: 14px; scrollbar-width: none; padding-bottom: 2px; pointer-events: auto; touch-action: pan-x; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
 .touch .dest .list::-webkit-scrollbar { display: none; }
 .touch .dest .list button { flex: 0 0 auto; white-space: nowrap; padding: 2px 0; }
 .touch .dest .list button small { display: none; }

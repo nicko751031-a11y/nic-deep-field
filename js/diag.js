@@ -71,7 +71,7 @@ export function initDiag(engine, controls, { quality } = {}) {
     if (acc >= 1000) { state.fps = Math.round(n * 1000 / acc); if (state.frame > 3) state.fpsMin = Math.min(state.fpsMin, state.fps); state.frame++; acc = 0; n = 0;
       const r = engine.renderer.info.render, m = engine.renderer.info.memory;
       const lod = engine.earthLod?.status();
-      const lodLine = lod ? `\n地球分塊 ${lod.state === 'ready' ? `L${lod.level}（${lod.size}px）· 視野內 ${lod.needed} · 已載入 ${lod.loaded} · 載入中 ${lod.loading} · 失敗 ${lod.failed}（退避重試中 ${lod.retrying ?? 0}、已放棄 ${lod.gaveUp ?? 0}） · ${lod.bytesMB}/${lod.budgetMB} MB${lod.synthetic ? ' · ⚠ 合成測試資料' : ''}` : lod.state === 'missing' ? '未安裝（沿用 4K）' : lod.state}` : '';
+      const lodLine = lod ? `\n地球分塊 ${lod.state === 'ready' ? `L${lod.level}（${lod.size}px）· 視野內 ${lod.needed} · 已載入 ${lod.loaded} · 載入中 ${lod.loading} · 失敗 ${lod.failed}（退避重試中 ${lod.retrying ?? 0}、已放棄 ${lod.gaveUp ?? 0}、上傳無效 ${lod.badUploads ?? 0}${lod.failReasons && Object.keys(lod.failReasons).length ? '：' + Object.entries(lod.failReasons).map(([k, v]) => `${k}×${v}`).join('、') : ''}） · ${lod.bytesMB}/${lod.budgetMB} MB${lod.synthetic ? ' · ⚠ 合成測試資料' : ''}` : lod.state === 'missing' ? '未安裝（沿用 4K）' : lod.state}` : '';
       // 每秒掃描一次場景輸出（低解析）：非有限值像素數與平均亮度；亮度突然掉到峰值 3% 以下視為黑幀
       try {
         const s = engine.scanNonFinite(0.08); state.nanScans++; state.nanPixels += s.bad; if (s.bad && !state.nanFirst) state.nanFirst = { ...s.first, frame: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) };

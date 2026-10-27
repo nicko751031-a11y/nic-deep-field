@@ -27,7 +27,7 @@ const frames = async (n, label) => {
   return { min, max, lumas };
 };
 const places = [
-  ['開場（台灣上空）', null],
+  ['開場（地球夜側）', null],
   ['地球 500 km 台灣', () => window.__ndf.testPlaceOver(23.7, 121.0, 500)],
   ['地球 300 km 北極', () => window.__ndf.testPlaceOver(89.5, 0, 300)],
   ['地球 300 km 南極', () => window.__ndf.testPlaceOver(-89.5, 0, 300)],

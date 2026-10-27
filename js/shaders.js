@@ -5,10 +5,13 @@
 //  - 星環：幾何薄盤，光學厚度貼圖；行星對環、環對行星的影子以幾何投影計算
 //  - 太陽：程序雜訊米粒組織 + 臨邊昏暗（示意）
 
-// 非有限值防護：任何 NaN／Inf 進入 Bloom 的降採樣鏈都會把大片畫面染黑（黑屏閃爍），輸出前一律歸零
+// 非有限值防護：任何 NaN／Inf 進入 Bloom 的降採樣鏈都會把大片畫面染黑（黑屏閃爍），輸出前一律歸零。
+// GLSL 的 pow(x, y) 在 x < 0 時未定義：Apple GPU 回傳 NaN（桌面 GPU 多半照常算出值），NaN 經 safeColor 歸零就是整片純黑（A2 夜側全黑）。
+// 平方一律用 sqr()，其他 pow 的底數一律先 max/clamp 到 ≥ 0（tools/test_shader_pow.mjs 靜態檢查）。
 export const SAFE_GLSL = /* glsl */`
   vec3 safeColor(vec3 c) { return (any(isnan(c)) || any(isinf(c))) ? vec3(0.0) : max(c, vec3(0.0)); }
   vec3 safeNormalize(vec3 v) { float l2 = dot(v, v); return l2 > 1e-14 ? v * inversesqrt(l2) : vec3(0.0); }
+  float sqr(float x) { return x * x; }
 `;
 
 export const PLANET_VERT = /* glsl */`
@@ -89,13 +92,13 @@ export const PLANET_FRAG = /* glsl */`
     }
     float ndl = dot(n, uSunDir);
     float diff = smoothstep(-0.03, 0.12, ndl) * max(ndl, 0.0) + 0.02 * smoothstep(-0.03, 0.12, ndl);
-    float mu = max(dot(n, v), 0.0);
-    float limb = mix(1.0, pow(mu, 0.45), uLimb);
+    float mu = clamp(dot(n, v), 0.0, 1.0);
+    float limb = mix(1.0, pow(mu, 0.45), uLimb); // pow-ok：mu 已 clamp ≥ 0
     float sh = ringShadow(vWorldPos, uSunDir);
     vec3 col = albedo * diff * limb * sh * uSunIntensity;
     // 薄大氣的邊緣（火星／金星）：淡色邊緣光
     if (uAtmoStrength > 0.0) {
-      float fres = pow(1.0 - mu, 3.0);
+      float fres = pow(max(1.0 - mu, 0.0), 3.0);
       float lit = smoothstep(-0.25, 0.35, ndl);
       col += uAtmoColor * fres * lit * uAtmoStrength * 0.6 * uSunIntensity;
     }
@@ -160,7 +163,7 @@ export const EARTH_FRAG = /* glsl */`
     // 雲層：有厚度感的 Lambert，晨昏線附近偏橘
     float cloudLit = max(ndl0, 0.0) * 0.95 + 0.05 * dayF;
     vec3 twilight = vec3(1.0, 0.55, 0.25);
-    float tw = exp(-pow(ndl0 / 0.10, 2.0)) * 0.6;
+    float tw = exp(-sqr(ndl0 / 0.10)) * 0.6; // 夜側 ndl0 < 0：不可用 pow(負數, 2.0)（Apple GPU → NaN → 整個夜側純黑，A2）
     vec3 cloudCol = mix(vec3(1.0), twilight, tw) * cloudLit;
     vec3 col = mix(surf, cloudCol, clamp(clouds * 1.15, 0.0, 1.0));
     // 近即時紅外線（10.3 µm）：GIBS 影像冷雲頂亮、地表暗；只在影像涵蓋範圍內疊加，透明＝缺測。
@@ -180,11 +183,11 @@ export const EARTH_FRAG = /* glsl */`
     vec3 lights = night * nightF * uNightBoost * (1.0 - max(clouds, wx) * 0.75);
     col += lights;
     // 大氣：邊緣散射（藍）與晨昏線附近的橘紅
-    float mu = max(dot(n, v), 0.0);
-    float fres = pow(1.0 - mu, 2.5);
+    float mu = clamp(dot(n, v), 0.0, 1.0);
+    float fres = pow(max(1.0 - mu, 0.0), 2.5);
     float lit = smoothstep(-0.3, 0.3, ndl0);
     col += uAtmoColor * fres * lit * 0.55;
-    col += twilight * exp(-pow(ndl0 / 0.14, 2.0)) * fres * 0.5;
+    col += twilight * exp(-sqr(ndl0 / 0.14)) * fres * 0.5;
     // 整體薄霧（高空看地面偏藍）
     col = mix(col, uAtmoColor * lit * 0.9, (1.0 - mu) * 0.08 * lit);
     gl_FragColor = vec4(safeColor(col * uSunIntensity), 1.0);
@@ -242,7 +245,7 @@ export const ATMO_FRAG = /* glsl */`
     vec3 col = uColor * od * lit * (1.0 + fwd) * uSunIntensity;
     // 晨昏線附近偏紅（短波被散射掉）
     float ndl = dot(nrm, uSunDir);
-    col = mix(col, col * vec3(1.6, 0.8, 0.45), exp(-pow(ndl / 0.18, 2.0)) * 0.7);
+    col = mix(col, col * vec3(1.6, 0.8, 0.45), exp(-sqr(ndl / 0.18)) * 0.7); // 夜側 ndl < 0：同 EARTH_FRAG，不可用 pow(負數, 2.0)
     gl_FragColor = vec4(safeColor(col), 1.0);
   }
 `;
@@ -316,7 +319,7 @@ export const SUN_FRAG = /* glsl */`
     float g = fbm(p * 60.0 + uTime * 0.02) * 0.6 + fbm(p * 220.0 - uTime * 0.05) * 0.4;   // 米粒組織
     float spots = smoothstep(0.62, 0.72, fbm(p * 6.0 + 3.0)) * smoothstep(0.3, 0.9, fbm(p * 25.0 + 7.0)); // 偶發黑子（示意）
     float mu = max(dot(normalize(vNormal), normalize(-vWorldPos)), 0.0);
-    float limb = 0.35 + 0.65 * pow(mu, 0.6); // 臨邊昏暗（可見光約 u≈0.6）
+    float limb = 0.35 + 0.65 * pow(mu, 0.6); // 臨邊昏暗（可見光約 u≈0.6）// pow-ok：mu = max(…, 0)
     vec3 base = vec3(1.0, 0.86, 0.62);
     vec3 col = base * (0.85 + 0.35 * g) * limb;
     col = mix(col, col * 0.25, spots * 0.9);
@@ -334,8 +337,8 @@ export const STAR_VERT = /* glsl */`
     float T = 4600.0 * (1.0 / (0.92 * bv + 1.7) + 1.0 / (0.92 * bv + 0.62));
     T = clamp(T, 2000.0, 30000.0);
     float t = T / 100.0;
-    float r = t <= 66.0 ? 1.0 : clamp(1.2929 * pow(t - 60.0, -0.1332), 0.0, 1.0);
-    float g = t <= 66.0 ? clamp(0.3900 * log(t) - 0.6318, 0.0, 1.0) : clamp(1.1298 * pow(t - 60.0, -0.0755), 0.0, 1.0);
+    float r = t <= 66.0 ? 1.0 : clamp(1.2929 * pow(max(t - 60.0, 1e-3), -0.1332), 0.0, 1.0);
+    float g = t <= 66.0 ? clamp(0.3900 * log(max(t, 1e-3)) - 0.6318, 0.0, 1.0) : clamp(1.1298 * pow(max(t - 60.0, 1e-3), -0.0755), 0.0, 1.0);
     float b = t >= 66.0 ? 1.0 : (t <= 19.0 ? 0.0 : clamp(0.5432 * log(t - 10.0) - 1.1963, 0.0, 1.0));
     return vec3(r, g, b);
   }
@@ -426,10 +429,10 @@ export const BH_FRAG = /* glsl */`
     float phi = atan(p.z, p.x);
     float t = (r - uDiskInner) / (uDiskOuter - uDiskInner);
     // 克卜勒角速度 ∝ r^-1.5；內側轉得快，形成細密的拉絲紋理（薄盤、絲狀，而非塊狀）
-    float ang = phi - uTime * 0.6 * pow(r, -1.5) * 8.0;
+    float ang = phi - uTime * 0.6 * pow(max(r, 1e-3), -1.5) * 8.0;
     float n = noise2(vec2(ang * 2.0, r * 14.0)) * 0.5 + noise2(vec2(ang * 6.0, r * 40.0)) * 0.3 + noise2(vec2(ang * 18.0, r * 90.0)) * 0.2;
     float fil = 0.85 + 0.15 * sin(r * 22.0 + n * 9.0);         // 細環絲（以雜訊打散，避免規則同心環）
-    float emis = pow(1.0 - t, 1.5) * (0.45 + 0.7 * n) * fil;
+    float emis = pow(max(1.0 - t, 0.0), 1.5) * (0.45 + 0.7 * n) * fil;
     // 配色：內緣白熱、中段淡金、外緣暖橘（藝術化；實際盤溫度決定光譜，此處僅示意）
     vec3 hot = vec3(1.0, 0.97, 0.92), gold = vec3(1.0, 0.86, 0.62), warm = vec3(0.95, 0.58, 0.28);
     vec3 col = t < 0.45 ? mix(hot, gold, t / 0.45) : mix(gold, warm, (t - 0.45) / 0.55);
@@ -440,7 +443,7 @@ export const BH_FRAG = /* glsl */`
     float gDop = 1.0 / (gamma * (1.0 - dot(vel, -rayDir)));
     float gGrav = sqrt(max(1.0 - 1.0 / r, 0.0));
     float g = gDop * gGrav;
-    float boost = pow(g, 2.5);                                   // 亮度不對稱（接近側亮）
+    float boost = pow(max(g, 0.0), 2.5);                         // 亮度不對稱（接近側亮）
     col = mix(col, vec3(0.8, 0.88, 1.0), clamp((g - 1.0) * 0.8, 0.0, 0.25));
     col = mix(col, vec3(1.0, 0.45, 0.2), clamp((1.0 - g) * 0.8, 0.0, 0.3));
     float alpha = clamp(emis * 1.5, 0.0, 1.0) * smoothstep(0.0, 0.05, t) * smoothstep(0.0, 0.25, 1.0 - t);

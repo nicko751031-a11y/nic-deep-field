@@ -10,7 +10,6 @@ import { EarthSurfaceView } from './earthview.js';
 import { EarthWeatherLayer } from './earthwx.js';
 import { C_KM_S, clamp } from './units.js';
 import { BODY_BY_KEY } from './bodies.js';
-import { geoToWorldDir } from './astro.js';
 
 const $ = (id) => document.getElementById(id);
 const V3 = THREE.Vector3;
@@ -224,26 +223,20 @@ async function boot() {
     if (fade > 0.005) { fctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade)})`; fctx.fillRect(0, 0, fx.width, fx.height); }
   }
 
-  // 開場鏡頭（負責人 2026-10-27 指示：每次載入都以看得到台灣為起始）：
-  // 鏡頭放在台灣（23.7°N, 121°E）正上方，北極朝上、地球置中，並極慢速環繞（30 分鐘一圈，鏡頭鎖定地心）。
-  // 距離依視窗長寬比決定：目標是地球盤面約佔較窄方向視角的 85%，但限制在 2.4–3.6 R。實測（tools/opening_frame_test.mjs，FOV 50°）：
-  // 桌面與手機橫向 2.76 R、盤面佔窄邊 83%；iPad 直向 3.6 R、89%；手機直向（長寬比 ≈ 0.45）被 3.6 R 上限鉗制，盤面佔窄邊 134–138%、
-  // 左右輪廓被裁切（完整入鏡需約 5.6–5.7 R）。手機直向要「完整盤面」還是「刻意裁切的巨物感」由 GPT（視覺）決定後再調 maxR。
-  // 位置以 geoToWorldDir 由當下的地軸與自轉角算出，所以不論何時載入，台灣都在畫面中央；日夜相位照實際時間（夜側時看到的是城市夜燈）。
-  const OPENING = { lat: 23.7, lon: 121.0, fill: 0.85, minR: 2.4, maxR: 3.6, orbitPeriodSec: 1800 };
-  function openingDistR(fovDeg, aspect) {
-    const halfV = fovDeg * Math.PI / 360; const halfH = Math.atan(Math.tan(halfV) * aspect);
-    const halfMin = Math.min(halfV, halfH) * OPENING.fill; // 盤面半角 = asin(R/d) ≤ halfMin
-    return clamp(1 / Math.sin(halfMin), OPENING.minR, OPENING.maxR);
-  }
+  // 開場鏡頭（負責人 2026-10-27 13:xx 指示：改回上一版的角度，必須保有「星際效應」的美感）：
+  // 地球夜側、晨昏線上方，太陽正要從地平邊緣升起（大氣邊緣受光＋鏡頭眩光），並極慢速環繞（鏡頭不鎖定，太陽緩緩自邊緣升起）。
+  // 鏡頭位置以太陽方向為準而非台灣，因此開場畫面與載入時刻無關；要看台灣請用搜尋或「返回地球」。
   function openingView() {
     const e = engine.bodies.get('earth'); if (!e?.axes) return;
     const pos = e.pos; const R = BODY_BY_KEY.earth.radius;
-    const ax = { xb: e.axes.xb.toArray(), yb: e.axes.yb.toArray(), zb: e.axes.zb.toArray() };
-    const n = geoToWorldDir(ax, OPENING.lat, OPENING.lon); const d = R * openingDistR(engine.camera.fov, engine.camera.aspect);
-    engine.camPos = [pos[0] + n[0] * d, pos[1] + n[1] * d, pos[2] + n[2] * d];
-    controls.lookAt(new V3(-n[0], -n[1], -n[2]), e.axes.yb);
-    controls.setOrbit('earth', true, OPENING.orbitPeriodSec);
+    const sunDir = new V3(-pos[0], -pos[1], -pos[2]).normalize(); const up = e.axes.yb.clone();
+    const side = sunDir.clone().applyAxisAngle(up, 2.62).normalize(); // 距太陽方向約 150°：深夜側，太陽剛好在邊緣外
+    const d = R * 2.4;
+    engine.camPos = [pos[0] + side.x * d, pos[1] + side.y * d, pos[2] + side.z * d];
+    const limb = sunDir.clone().sub(side.clone().multiplyScalar(sunDir.dot(side))).normalize(); // 太陽方向在視平面上的分量 → 受光邊緣
+    const look = new V3(pos[0] + limb.x * R * 0.9 + up.x * R * 0.1 - engine.camPos[0], pos[1] + limb.y * R * 0.9 + up.y * R * 0.1 - engine.camPos[1], pos[2] + limb.z * R * 0.9 + up.z * R * 0.1 - engine.camPos[2]);
+    controls.lookAt(look, up);
+    controls.setOrbit('earth', true, 900); controls.orbit.lookLocked = false;
   }
 
   function resetView() {

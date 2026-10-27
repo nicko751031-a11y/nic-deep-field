@@ -47,7 +47,7 @@ export class EarthLod {
 
   status() {
     const lv = this.manifest?.levels?.[this.level - 1];
-    return { state: this.state, synthetic: !!this.manifest?.synthetic_test, baseSwapped: !!this.baseSwapped, overBudget: this.overBudget || 0, capLevel: this.capLevel ?? null, capEvents: this.capEvents || 0, level: this.level, size: lv ? lv.size[0] : 4096, needed: this.neededNow, loaded: [...this.tiles.values()].filter((t) => t.state === 'ok').length, loading: this.loading, failed: this.failed, retrying: [...this.tiles.values()].filter((t) => t.state === 'failed').length, gaveUp: [...this.tiles.values()].filter((t) => t.state === 'gaveup').length, bytesMB: Math.round(this.loadedBytes / 1048576), budgetMB: Math.round(this.budgetBytes / 1048576), maxLevel: this.maxLevel };
+    return { state: this.state, synthetic: !!this.manifest?.synthetic_test, baseSwapped: !!this.baseSwapped, overBudget: this.overBudget || 0, capLevel: this.capLevel ?? null, capEvents: this.capEvents || 0, level: this.level, size: lv ? lv.size[0] : 4096, needed: this.neededNow, loaded: [...this.tiles.values()].filter((t) => t.state === 'ok').length, loading: this.loading, failed: this.failed, retrying: [...this.tiles.values()].filter((t) => t.state === 'failed').length, gaveUp: [...this.tiles.values()].filter((t) => t.state === 'gaveup').length, badUploads: this.badUploads || 0, failReasons: Object.fromEntries([...this.tiles.values()].filter((t) => t.why && t.state !== 'ok').reduce((m, t) => m.set(t.why, (m.get(t.why) || 0) + 1), new Map())), bytesMB: Math.round(this.loadedBytes / 1048576), budgetMB: Math.round(this.budgetBytes / 1048576), maxLevel: this.maxLevel };
   }
 
   // 每幀由 engine._updateSolar 呼叫：earthEntry、相對相機位置、每弧度的裝置像素數
@@ -177,11 +177,38 @@ export class EarthLod {
     const fail = (why) => { this.loading--; this.failed++; this._markFailed(t, why); };
     this.loader.load(p.userData.file, (tex) => {
       if (!tex.image || tex.image.width !== this.manifest.tile || tex.image.height !== this.manifest.tile) { tex.dispose(); fail('尺寸不符'); return; }
-      this.loading--;
       tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = THREE.ClampToEdgeWrapping; tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = this.engine.maxAniso;
+      // 上傳到 GPU 後驗證（A2 黑色扇形假說：iOS 記憶體不足時貼圖上傳靜默失敗，取樣為全黑，而補丁取代了本體 → 整塊純黑）。
+      // 驗證失敗視同載入失敗：該塊沿用 L0 底圖（uHasTile=0），並走退避重試；原因記在 t.why 供 ?diag=1 顯示。
+      const bad = this._verifyTile(tex);
+      if (bad) { tex.dispose(); this.badUploads = (this.badUploads || 0) + 1; fail(bad); return; }
+      this.loading--;
       t.tex = tex; t.bytes = TILE_BYTES; t.state = 'ok'; t.lastUse = this.frame; t.fails = 0; this.loadedBytes += t.bytes;
     }, undefined, () => fail('載入失敗'));
     return true;
+  }
+
+  // 把塊貼圖真的送上 GPU，檢查 GL 錯誤（GL_OUT_OF_MEMORY 等），再畫到 4×4 暫存讀回：取樣全黑就判定上傳無效。
+  // 衛星影像的 4×4 縮圖不可能全為 (0,0,0)。沒有 renderer（單元測試的假引擎）時略過驗證。
+  _verifyTile(tex) {
+    const r = this.engine.renderer; if (!r || typeof r.initTexture !== 'function' || typeof r.readRenderTargetPixels !== 'function') return null;
+    try {
+      const gl = r.getContext(); while (gl.getError() !== gl.NO_ERROR) { /* 清掉先前殘留的錯誤旗標 */ }
+      r.initTexture(tex);
+      const err = gl.getError();
+      if (err !== gl.NO_ERROR) return `GPU 上傳錯誤 0x${err.toString(16)}${err === gl.OUT_OF_MEMORY ? '（記憶體不足）' : ''}`;
+      if (!this._probe) {
+        this._probe = { rt: new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false, stencilBuffer: false }), scene: new THREE.Scene(), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), mat: new THREE.MeshBasicMaterial(), buf: new Uint8Array(4 * 4 * 4) };
+        this._probe.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this._probe.mat); this._probe.scene.add(this._probe.mesh);
+      }
+      const p = this._probe; p.mat.map = tex; p.mat.needsUpdate = true;
+      const prevRT = r.getRenderTarget(); const prevAuto = r.autoClear; r.autoClear = true;
+      r.setRenderTarget(p.rt); r.render(p.scene, p.cam); r.readRenderTargetPixels(p.rt, 0, 0, 4, 4, p.buf); r.setRenderTarget(prevRT); r.autoClear = prevAuto;
+      p.mat.map = null;
+      let sum = 0; for (let i = 0; i < p.buf.length; i += 4) sum += p.buf[i] + p.buf[i + 1] + p.buf[i + 2];
+      if (sum === 0) return '上傳後取樣為全黑';
+      return null;
+    } catch (e) { return `驗證失敗：${e && e.message ? e.message : e}`; }
   }
 
   // 失敗重試：指數退避 2、4、8、16、32 秒（上限 60 秒），連續失敗 MAX_TRIES 次後放棄（沿用 L0，不再打來源）；retryFailed() 可手動重置

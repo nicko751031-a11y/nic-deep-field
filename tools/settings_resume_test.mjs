@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 設定重載保留位置（AUDIT D6）與重設所有設定（AUDIT D7）的無頭 Chromium 驗證。
 // 1) 飛到台灣上空 500 km、暫停時間 → 切畫質（整頁重載）→ 仍在台灣上空 500 km、時間仍暫停、網址上的 ?quality= 已移除、新畫質生效；
-// 2) 開安全模式（重載、?safe=1）→ 位置仍保留、後處理關閉；3) 「重設所有設定」→ localStorage 無 ndf-*、網址無參數、回到開場（台灣上空 2.4–3.6 R）；
+// 2) 開安全模式（重載、?safe=1）→ 位置仍保留、後處理關閉；3) 「重設所有設定」→ localStorage 無 ndf-*、網址無參數、回到開場（夜側 2.4 R）；
 // 4) sessionStorage 內是壞資料或過期資料 → 無錯誤、正常開場。用法：node tools/settings_resume_test.mjs [baseURL]
 import { createRequire } from 'node:module'; import { execSync } from 'node:child_process'; import path from 'node:path';
 const require = createRequire(import.meta.url);
@@ -61,22 +61,24 @@ await setSel('rate', '0'); await page.waitForTimeout(200); w = await where(); co
 await setChk('s-safe', false); await page.waitForURL((u) => !u.searchParams.has('safe'), { timeout: 30000 }); await loaded(); await page.waitForTimeout(1000);
 w = await where(); ok(w.timeRate === 0 && Math.abs(w.simTime - simP) < 1000, `暫停重載：時刻不動（差 ${((w.simTime - simP) / 1000).toFixed(1)} 秒）`);
 // 2d) 按「現在」→ 重載 → 仍是現在、閘門可用
-await page.evaluate(() => document.getElementById('b-now').click()); await page.waitForTimeout(200); w = await where(); ok(Math.abs(w.simOffsetS) < 2 && w.timeRate === 1, '按「現在」：偏移 ≈ 0、即時');
+// 軟體繪圖約 1 fps、每幀 dt 上限 0.1 秒，「即時」模擬時鐘會落後牆鐘（真機 ≥ 10 fps 無此現象）：按下後在同一個 tick 內讀取偏移
+const nowR = await page.evaluate(() => { document.getElementById('b-now').click(); const n = window.__ndf; return { off: (n.engine.simTime - Date.now()) / 1000, rate: n.engine.timeRate }; });
+ok(Math.abs(nowR.off) < 1 && nowR.rate === 1, `按「現在」：偏移 ${nowR.off.toFixed(2)} 秒 ≈ 0、即時`);
 await setChk('s-safe', true); await page.waitForURL((u) => u.searchParams.get('safe') === '1', { timeout: 30000 }); await loaded(); await page.waitForTimeout(1000);
-w = await where(); ok(Math.abs(w.simOffsetS) < 5 && w.timeRate === 1 && w.wxValid === true, `「現在」重載後仍是現在（偏移 ${w.simOffsetS.toFixed(1)} 秒）、紅外線閘門可用`);
+w = await where(); ok(Math.abs(w.simOffsetS) < 10 && w.timeRate === 1 && w.wxValid === true, `「現在」重載後仍是現在（偏移 ${w.simOffsetS.toFixed(1)} 秒；軟體繪圖下即時時鐘每秒落後約 0.9 秒屬測試環境特性）、紅外線閘門可用`);
 // 3) 重設所有設定 → 無 ndf-*、無網址參數、回到開場
 ok(w.ls.includes('ndf-quality'), `重設前 localStorage 有 ${w.ls.join('、')}`);
 await page.evaluate(() => document.getElementById('s-reset').click()); await page.waitForURL((u) => u.search === '', { timeout: 30000 }); await loaded(); await page.waitForTimeout(1500);
 w = await where(); console.log('after reset', JSON.stringify({ lat: +w.lat.toFixed(2), lon: +w.lon.toFixed(2), distR: +w.distR.toFixed(2), ls: w.ls, url: w.url, post: w.post }));
 ok(w.ls.length === 0, 'localStorage 無 ndf-* 鍵');
 ok(w.url === '' && w.post === true, '網址無參數、安全模式解除');
-ok(Math.abs(w.lat - 23.7) < 0.5 && Math.abs(w.lon - 121) < 0.5 && w.distR > 2.3 && w.distR < 3.7 && w.orbit, `回到開場（台灣上空 ${w.distR.toFixed(2)} R、環繞中）`);
+ok(Math.abs(w.distR - 2.4) < 0.05 && w.orbit, `回到開場（夜側 ${w.distR.toFixed(2)} R、環繞中）`);
 // 4) 壞資料／過期資料不影響開場
 await page.evaluate(() => sessionStorage.setItem('ndf-resume', '{not json')); await page.reload({ waitUntil: 'load' }); await loaded(); await page.waitForTimeout(800);
-w = await where(); ok(w.distR > 2.3 && w.distR < 3.7 && w.orbit, '壞資料 → 正常開場');
+w = await where(); ok(Math.abs(w.distR - 2.4) < 0.05 && w.orbit, '壞資料 → 正常開場');
 await page.evaluate(() => sessionStorage.setItem('ndf-resume', JSON.stringify({ t: Date.now() - 600000, entry: { kind: 'body', id: 'earth' }, target: 'earth', camPos: [1, 2, 3], rel: [0, 0, 7000], camQuat: [0, 0, 0, 1] })));
 await page.reload({ waitUntil: 'load' }); await loaded(); await page.waitForTimeout(800);
-w = await where(); ok(w.distR > 2.3 && w.distR < 3.7 && w.orbit, '過期資料（10 分鐘前）→ 正常開場');
+w = await where(); ok(Math.abs(w.distR - 2.4) < 0.05 && w.orbit, '過期資料（10 分鐘前）→ 正常開場');
 ok(errs.length === 0, `console／page 錯誤 0${errs.length ? '：' + errs.join(' | ') : ''}`);
 await browser.close();
 console.log(fails ? `\n${fails} 項失敗` : '\n全部通過');
