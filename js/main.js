@@ -253,6 +253,47 @@ async function boot() {
     if (rel) controls.lookAt(rel, up);
   }
   function goToEarth() { goTo(catalog.entries.find((e) => e.kind === 'body' && e.id === 'earth')); }
+
+  // 設定重載時保留位置（AUDIT D6）：畫質／安全模式切換會整頁重載。重載前把目前目的地、相對目標天體的位置、朝向、
+  // 時間與環繞狀態寫到 sessionStorage（只在同一分頁、120 秒內有效），載入後還原，不再回到開場。
+  // 位置存「相對目標天體」而非絕對座標：重載期間天體仍照星曆移動，還原時才不會漂移；時間倍率＝即時時不回寫 simTime，維持真正的現在。
+  const RESUME_KEY = 'ndf-resume';
+  function saveResume() {
+    try {
+      const q = engine.camQuat; const body = engine.frame.type === 'solar' ? engine.bodies.get(controls.target) : null;
+      const rel = body ? [engine.camPos[0] - body.pos[0], engine.camPos[1] - body.pos[1], engine.camPos[2] - body.pos[2]] : null;
+      sessionStorage.setItem(RESUME_KEY, JSON.stringify({
+        t: Date.now(), entry: currentEntry ? { kind: currentEntry.kind, id: currentEntry.id } : null, target: controls.target,
+        camPos: engine.camPos.slice(), rel, camQuat: [q.x, q.y, q.z, q.w], simTime: engine.simTime, timeRate: engine.timeRate,
+        orbit: controls.orbit ? { key: controls.orbit.key, period: 2 * Math.PI / controls.orbit.omega } : null,
+      }));
+    } catch (e) { /* 無法寫入（隱私模式等）就只是回到開場 */ }
+  }
+  function readResume() {
+    try {
+      const raw = sessionStorage.getItem(RESUME_KEY); sessionStorage.removeItem(RESUME_KEY); if (!raw) return null;
+      const r = JSON.parse(raw); const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+      if (!r || !Number.isFinite(r.t) || Date.now() - r.t > 120000 || !v3(r.camPos) || (r.rel && !v3(r.rel)) || !r.entry) return null;
+      return r;
+    } catch (e) { return null; }
+  }
+  function applyResume(r) {
+    const entry = catalog.entries.find((e) => e.kind === r.entry.kind && e.id === r.entry.id); if (!entry) return false;
+    goTo(entry, { instant: true });
+    if (Number.isFinite(r.timeRate) && r.timeRate !== 1 && Number.isFinite(r.simTime)) { engine.simTime = r.simTime; engine.timeRate = r.timeRate; const sel = $('rate'); if ([...sel.options].some((o) => o.value === String(r.timeRate))) sel.value = String(r.timeRate); }
+    engine.update(0);
+    const body = engine.frame.type === 'solar' && r.rel ? engine.bodies.get(r.target) : null;
+    engine.camPos = body ? [body.pos[0] + r.rel[0], body.pos[1] + r.rel[1], body.pos[2] + r.rel[2]] : r.camPos.slice();
+    if (Array.isArray(r.camQuat) && r.camQuat.length === 4 && r.camQuat.every(Number.isFinite)) engine.camQuat.set(r.camQuat[0], r.camQuat[1], r.camQuat[2], r.camQuat[3]).normalize();
+    controls.stop(); if (r.orbit && r.orbit.key && Number.isFinite(r.orbit.period) && r.orbit.period > 0) controls.setOrbit(r.orbit.key, true, r.orbit.period);
+    engine.update(0); return true;
+  }
+  // 重設所有設定（AUDIT D7）：清掉所有 ndf-* localStorage 與還原資料，去掉網址參數（?safe=1、?quality=）以預設值重新載入
+  function resetAllSettings() {
+    try { for (const k of Object.keys(localStorage)) if (k.startsWith('ndf-')) localStorage.removeItem(k); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(RESUME_KEY); } catch (e) { /* ignore */ }
+    location.href = location.pathname;
+  }
   function goToEarthMarker(iss) {
     const earthEntry = catalog.entries.find((e) => e.kind === 'body' && e.id === 'earth');
     const dest = catalog.destination(earthEntry, engine);
@@ -325,6 +366,7 @@ async function boot() {
     onSens: (v) => { controls.sensitivity = 0.0022 * v; },
     onInvert: (v) => { controls.invertY = v; },
     onFov: (v) => { engine.camera.fov = v; engine.camera.updateProjectionMatrix(); },
+    onBeforeReload: saveResume, onResetAll: resetAllSettings,
     onAudio: async (v) => { const r = await startAudio(v); if (r?.ok && v === 'sonify' && r.table) $('s-audio-note').innerHTML += '<br>目前音高：' + r.table.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); },
   });
   syncAudioUI(); // 開頁時音訊為 off：選單與按鈕都顯示未播放，不預先顯示音景已選
@@ -349,11 +391,16 @@ async function boot() {
   };
 
   // ---------------- 開始（開場） ----------------
-  goTo(catalog.entries.find((e) => e.kind === 'body' && e.id === 'earth'), { instant: true });
-  openingView();
+  const resume = readResume();
+  const resumed = !!(resume && applyResume(resume));
+  if (!resumed) {
+    goTo(catalog.entries.find((e) => e.kind === 'body' && e.id === 'earth'), { instant: true });
+    openingView();
+  }
   fadeLevel = 1;
   $('loading').classList.add('done');
-  setTimeout(() => ui.titleCard('ARC', '第一人稱 · 真實比例 · 測試版', '任何輸入即可開始飛行', 5200), 900);
+  if (resumed) setTimeout(() => ui.toast('設定已套用，已回到重載前的位置', 3500), 600);
+  else setTimeout(() => ui.titleCard('ARC', '第一人稱 · 真實比例 · 測試版', '任何輸入即可開始飛行', 5200), 900);
   const openT0 = performance.now();
   if (errors.length) setTimeout(() => ui.toast(`有 ${errors.length} 項資源載入失敗，詳見設定 → 載入狀態`, 6000), 6500);
 
