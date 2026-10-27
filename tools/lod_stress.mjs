@@ -31,7 +31,8 @@ for (const quality of ['medium', 'high']) {
   const s0 = await st(); console.log(`\n== quality=${quality} 預算 ${s0.budgetMB} MB，state=${s0.state}`);
   ok(s0.state === 'ready' && !s0.synthetic, '分塊 manifest 已載入（真實資料）');
 
-  await go(23.7, 121.0, 400); let s = await st(); console.log('台灣 400 km', JSON.stringify(s), 'fps', await fps());
+  await go(23.7, 121.0, 400, 3000); await page.waitForFunction(() => (window.__ndf.engine.earthLod?.level || 0) > 0 && window.__ndf.engine.earthLod.loading === 0, null, { timeout: 30000 }).catch(() => {});
+  let s = await st(); console.log('台灣 400 km', JSON.stringify(s), 'fps', await fps());
   ok(s.level >= 1, `台灣 400 km 進入 L${s.level}`);
   await go(23.7, 121.0, 1500, 6000); s = await st(); console.log('台灣 1500 km', JSON.stringify(s));
   await go(88.0, 10.0, 1200, 7000); s = await st(); console.log('北極 88°N 1200 km', JSON.stringify(s));
@@ -47,7 +48,9 @@ for (const quality of ['medium', 'high']) {
     await go(23.7, 121.0, 30000, 1500); const b = await st();
     console.log(`來回 ${i + 1}: 近 L${a.level} needed ${a.needed} loaded ${a.loaded} ${a.bytesMB}MB tex ${a.textures} | 遠 L${b.level} loaded ${b.loaded} ${b.bytesMB}MB tex ${b.textures}`);
   }
-  await go(23.7, 121.0, 400, 6000); s = await st(); console.log('最終 台灣 400 km', JSON.stringify(s), 'fps', await fps());
+  // 高畫質在 SwiftShader 下只有 1–2 fps，升層遲滯需要更多秒數：等層級 > 0（最多 30 秒）而不是固定 6 秒
+  await go(23.7, 121.0, 400, 3000); await page.waitForFunction(() => (window.__ndf.engine.earthLod?.level || 0) > 0 && window.__ndf.engine.earthLod.loading === 0, null, { timeout: 30000 }).catch(() => {});
+  s = await st(); console.log('最終 台灣 400 km', JSON.stringify(s), 'fps', await fps());
   ok(s.level >= 1 && s.loaded >= 1, `十趟後仍能回到 L${s.level} 並載入 ${s.loaded} 塊`);
   const log = await page.evaluate(() => window.__lodLog);
   const shader = await page.evaluate(() => window.__ndf.engine.shaderErrors.length);

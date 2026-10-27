@@ -139,13 +139,18 @@ export class ObservePanel {
         <dt>狀態</dt><dd class="st">載入中</dd>
       </dl>
       <div class="obs-actions"><button class="refresh">重新讀取</button><a class="open" target="_blank" rel="noopener" href="${src.home}">在新分頁開啟原始影像</a><a target="_blank" rel="noopener" href="${src.home}">官方來源頁</a></div>`;
+    // 最後一次請求優先：每次載入取序號，每個 await 之後檢查是否已被更新的請求取代；過時的成功或失敗都不寫入 DOM
+    let seq = 0;
     const run = async () => {
+      const my = ++seq; const stale = () => my !== seq;
       const imgBox = el.querySelector('.obs-img'); const st = el.querySelector('.st'); const cap = el.querySelector('.cap'); const lag = el.querySelector('.lag'); const loaded = el.querySelector('.loaded');
       imgBox.innerHTML = '<div class="obs-status">載入中…</div>'; st.textContent = '載入中'; st.className = 'st';
       try {
         const r = await src.run();
+        if (stale()) return;
         el.querySelector('.open').href = r.imageUrl.split('?')[0];
         const img = await loadImage(r.imageUrl);
+        if (stale()) { img.src = ''; return; }
         imgBox.innerHTML = ''; imgBox.appendChild(img);
         if (r.captured && !Number.isNaN(r.captured.getTime())) {
           cap.textContent = `${fmtDateTime(r.captured, { utc: true })}｜本地 ${fmtDateTime(r.captured)}`;
@@ -155,6 +160,7 @@ export class ObservePanel {
         loaded.textContent = `${fmtDateTime(new Date())}（這不是拍攝時間）`;
         st.textContent = '已載入'; st.className = 'st ok';
       } catch (e) {
+        if (stale()) return;
         imgBox.innerHTML = `<div class="obs-status err">來源中斷或無法連線：${e.message || e}<br>不顯示舊影像以免誤導。</div>`;
         st.textContent = `失敗：${e.message || e}`; st.className = 'st err'; cap.textContent = '—'; lag.textContent = '—';
       }
@@ -183,17 +189,20 @@ export class ObservePanel {
         <a target="_blank" rel="noopener" href="https://plus.nasa.gov/scheduled-video/iss-live-stream/">NASA+ ISS Live（含排程）</a>
         <a target="_blank" rel="noopener" href="https://eol.jsc.nasa.gov/ESRS/HDEV/">NASA HDEV 計畫頁（歷史說明）</a>
       </div>`;
+    let seq = 0;
     const run = async () => {
+      const my = ++seq; const stale = () => my !== seq;
       const st = el.querySelector('.st');
       try {
         const j = await fetchJson(`https://api.wheretheiss.at/v1/satellites/25544?x=${Date.now()}`);
+        if (stale()) return;
         const t = new Date(j.timestamp * 1000);
         el.querySelector('.cap').textContent = `${fmtDateTime(t, { utc: true })}｜本地 ${fmtDateTime(t)}（${fmtAgo(Date.now() - t.getTime())}）`;
         el.querySelector('.pos').textContent = `${j.latitude.toFixed(3)}°，${j.longitude.toFixed(3)}°，${j.altitude.toFixed(1)} km`;
         el.querySelector('.vel').textContent = `${j.velocity.toFixed(0)} km/h`;
         st.textContent = '已載入'; st.className = 'st ok';
         this.iss = { lat: j.latitude, lon: j.longitude, altKm: j.altitude, time: t };
-      } catch (e) { st.textContent = `失敗：${e.message || e}`; st.className = 'st err'; this.iss = null; }
+      } catch (e) { if (stale()) return; st.textContent = `失敗：${e.message || e}`; st.className = 'st err'; this.iss = null; }
     };
     el.querySelector('.refresh').addEventListener('click', run);
     el.querySelector('.mark').addEventListener('click', () => { if (this.iss) this.onMarkIss?.(this.iss); else alert('尚未取得 ISS 位置'); });

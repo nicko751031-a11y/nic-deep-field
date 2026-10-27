@@ -47,6 +47,7 @@ export function initDiag(engine, controls, { quality } = {}) {
   };
   flags.post = engine.postOn !== false;
   for (const b of Object.values(tbtns)) toggles.appendChild(b);
+  toggles.appendChild(btn('重試失敗分塊', () => { const n = engine.earthLod?.retryFailed?.() ?? 0; live.textContent += `\n已重置 ${n} 個失敗分塊`; }));
   toggles.appendChild(btn('像素比 1', () => { engine.maxPixelRatio = 1; engine.resize(); }));
   toggles.appendChild(btn('安全模式（重載）', () => { const u = new URL(location.href); u.searchParams.set('safe', '1'); location.href = u.toString(); }));
   toggles.appendChild(btn(caps.logDepth ? '關閉對數深度（重載）' : '開啟對數深度（重載）', () => { const u = new URL(location.href); if (caps.logDepth) u.searchParams.set('nolog', '1'); else u.searchParams.delete('nolog'); location.href = u.toString(); }));
@@ -69,7 +70,7 @@ export function initDiag(engine, controls, { quality } = {}) {
     if (acc >= 1000) { state.fps = Math.round(n * 1000 / acc); if (state.frame > 3) state.fpsMin = Math.min(state.fpsMin, state.fps); state.frame++; acc = 0; n = 0;
       const r = engine.renderer.info.render, m = engine.renderer.info.memory;
       const lod = engine.earthLod?.status();
-      const lodLine = lod ? `\n地球分塊 ${lod.state === 'ready' ? `L${lod.level}（${lod.size}px）· 視野內 ${lod.needed} · 已載入 ${lod.loaded} · 載入中 ${lod.loading} · 失敗 ${lod.failed} · ${lod.bytesMB}/${lod.budgetMB} MB${lod.synthetic ? ' · ⚠ 合成測試資料' : ''}` : lod.state === 'missing' ? '未安裝（沿用 4K）' : lod.state}` : '';
+      const lodLine = lod ? `\n地球分塊 ${lod.state === 'ready' ? `L${lod.level}（${lod.size}px）· 視野內 ${lod.needed} · 已載入 ${lod.loaded} · 載入中 ${lod.loading} · 失敗 ${lod.failed}（退避重試中 ${lod.retrying ?? 0}、已放棄 ${lod.gaveUp ?? 0}） · ${lod.bytesMB}/${lod.budgetMB} MB${lod.synthetic ? ' · ⚠ 合成測試資料' : ''}` : lod.state === 'missing' ? '未安裝（沿用 4K）' : lod.state}` : '';
       // 每秒掃描一次場景輸出（低解析）：非有限值像素數與平均亮度；亮度突然掉到峰值 3% 以下視為黑幀
       try {
         const s = engine.scanNonFinite(0.08); state.nanScans++; state.nanPixels += s.bad; if (s.bad && !state.nanFirst) state.nanFirst = { ...s.first, frame: engine.frame.type, camPos: engine.camPos.map((v) => Math.round(v)) };

@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 
 const TILE_BYTES = 2048 * 2048 * 4 * 1.34; // RGBA + mipmaps 估算
+const MAX_TRIES = 5; // 同一塊連續失敗達此次數即放棄自動重試（總等待約 2+4+8+16 秒），避免對來源形成請求風暴
 
 export class EarthLod {
   constructor(engine, path = 'assets/textures/earth_tiles') {
@@ -46,13 +47,13 @@ export class EarthLod {
 
   status() {
     const lv = this.manifest?.levels?.[this.level - 1];
-    return { state: this.state, synthetic: !!this.manifest?.synthetic_test, baseSwapped: !!this.baseSwapped, overBudget: this.overBudget || 0, capLevel: this.capLevel ?? null, capEvents: this.capEvents || 0, level: this.level, size: lv ? lv.size[0] : 4096, needed: this.neededNow, loaded: [...this.tiles.values()].filter((t) => t.state === 'ok').length, loading: this.loading, failed: this.failed, bytesMB: Math.round(this.loadedBytes / 1048576), budgetMB: Math.round(this.budgetBytes / 1048576), maxLevel: this.maxLevel };
+    return { state: this.state, synthetic: !!this.manifest?.synthetic_test, baseSwapped: !!this.baseSwapped, overBudget: this.overBudget || 0, capLevel: this.capLevel ?? null, capEvents: this.capEvents || 0, level: this.level, size: lv ? lv.size[0] : 4096, needed: this.neededNow, loaded: [...this.tiles.values()].filter((t) => t.state === 'ok').length, loading: this.loading, failed: this.failed, retrying: [...this.tiles.values()].filter((t) => t.state === 'failed').length, gaveUp: [...this.tiles.values()].filter((t) => t.state === 'gaveup').length, bytesMB: Math.round(this.loadedBytes / 1048576), budgetMB: Math.round(this.budgetBytes / 1048576), maxLevel: this.maxLevel };
   }
 
   // 每幀由 engine._updateSolar 呼叫：earthEntry、相對相機位置、每弧度的裝置像素數
   update(earth, rel, pxPerRad) {
     if (this.state !== 'ready' || !earth.mesh.material.uniforms.uTile) return;
-    this.frame++;
+    this.frame++; const now = performance.now();
     // ---- 選層：星下點的像素足跡 ≈ 高度 / pxPerRad（km），texel ≈ 2πR / W；要 1 texel/pixel 則 W ≥ 2πR·pxPerRad / 高度
     const R = earth.def.radius; const alt = Math.max(rel.length() - R, 1);
     const need = 2 * Math.PI * R * pxPerRad / alt;
@@ -108,7 +109,8 @@ export class EarthLod {
       if (!visible) continue;
       needed++;
       if (t?.state === 'ok') t.lastUse = this.frame;
-      else if (!t && !downgrading) wanted.push({ p, prio });
+      // 未載入、或先前失敗且已到退避時間（頁面可見時）→ 排入載入；放棄的塊（連續失敗達上限）不再自動重試
+      else if ((!t || (t.state === 'failed' && now >= t.retryAt)) && !downgrading && !document.hidden) wanted.push({ p, prio });
     }
     this.neededNow = needed;
     // 硬性預算（第一道）：本層可見塊 × 每塊 GPU 位元組 > 預算 → 立即降一層（低層可見塊約為 1/4），不等載入
@@ -170,14 +172,25 @@ export class EarthLod {
     const reserve = (this.loading + 1) * TILE_BYTES;
     this._evict(reserve);
     if (this.loadedBytes + reserve > this.budgetBytes) return false;
-    const t = { tex: null, bytes: 0, lastUse: this.frame, state: 'loading' }; this.tiles.set(key, t); this.loading++;
+    const prev = this.tiles.get(key);
+    const t = { tex: null, bytes: 0, lastUse: this.frame, state: 'loading', fails: prev?.fails || 0, retryAt: 0 }; this.tiles.set(key, t); this.loading++;
+    const fail = (why) => { this.loading--; this.failed++; this._markFailed(t, why); };
     this.loader.load(p.userData.file, (tex) => {
+      if (!tex.image || tex.image.width !== this.manifest.tile || tex.image.height !== this.manifest.tile) { tex.dispose(); fail('尺寸不符'); return; }
       this.loading--;
-      if (!tex.image || tex.image.width !== this.manifest.tile || tex.image.height !== this.manifest.tile) { t.state = 'failed'; this.failed++; tex.dispose(); return; }
       tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = THREE.ClampToEdgeWrapping; tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = this.engine.maxAniso;
-      t.tex = tex; t.bytes = TILE_BYTES; t.state = 'ok'; t.lastUse = this.frame; this.loadedBytes += t.bytes;
-    }, undefined, () => { this.loading--; t.state = 'failed'; this.failed++; });
+      t.tex = tex; t.bytes = TILE_BYTES; t.state = 'ok'; t.lastUse = this.frame; t.fails = 0; this.loadedBytes += t.bytes;
+    }, undefined, () => fail('載入失敗'));
+    return true;
   }
+
+  // 失敗重試：指數退避 2、4、8、16、32 秒（上限 60 秒），連續失敗 MAX_TRIES 次後放棄（沿用 L0，不再打來源）；retryFailed() 可手動重置
+  _markFailed(t, why) {
+    t.fails = (t.fails || 0) + 1; t.why = why;
+    if (t.fails >= MAX_TRIES) { t.state = 'gaveup'; t.retryAt = Infinity; return; }
+    t.state = 'failed'; t.retryAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + Math.min(60000, 2000 * Math.pow(2, t.fails - 1));
+  }
+  retryFailed() { let n = 0; for (const t of this.tiles.values()) if (t.state === 'failed' || t.state === 'gaveup') { t.state = 'failed'; t.fails = 0; t.retryAt = 0; n++; } return n; }
 
   // 釋放最久未用（且目前不可見）的塊，直到「已載入 + 預留 reserve」低於預算
   _evict(reserve = 0) {

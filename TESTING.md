@@ -226,3 +226,8 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - 修正：`js/audio.js` 新增 `async start(mode)`：await `resume()`（3 秒逾時），只有 `state==='running'` 才建立節點並回報 `{ok:true}`；拒絕／逾時／仍 suspended 時保持 off、不留節點、不產生未處理 rejection；較晚的呼叫取代較早未完成者；`onstatechange` 偵測 iOS interrupted／suspended 時停止並通知。`js/main.js`：按鈕與設定選單一律由 `start()` 結果同步（`syncAudioUI`），失敗 toast 說明原因；開頁時選單顯示靜音。
 - 測試：`node --test tools/test_audio.mjs` 9 項（成功／拒絕／仍 suspended／逾時／切換 20 次節點峰值 ≤ 單一音景、停止後 0／較晚呼叫取代／系統暫停／不支援／無未處理 rejection）全部通過；`tools/audio_ui_test.mjs`（無頭 Chromium 以假 AudioContext）：拒絕→未播放＋提示、成功→播放中、選單切換、靜音、系統暫停→回未播放、連按 20 次後節點 0、console 0。**iOS Safari 真機未測**（真實手勢與靜音鍵行為需真機）。
 - **補充（GPT 第二次稽核，PR #26 合併後發現）**：`main.js` 的 `audioBusy` 閘門會忽略 resume 等待期間的停止／切換。改為最後操作優先：按鈕與選單直接交給 `audio.start()`（內部 `seq` 讓舊啟動作廢），等待期間再按按鈕視為取消；`Promise.race` 的 3 秒計時器成功／失敗後清除。單元新增 3 項（延遲 resume 時播放→停止最終 off、ambient→organ 只播 organ、快速切換 20 次最後獲勝且節點 0），瀏覽器新增 4 項（透過按鈕／選單在等待期間取消與切換、交錯快速切換 20 次），全部通過。
+
+## 分塊失敗退避重試與觀測面板刷新競態（2026-10-27，Claude 工程；回應 GPT 在 Issue #16／#8 的稽核）
+
+- **分塊失敗永久停留 4K**（GPT Issue #16，推導正確）：`earthlod.js` 失敗塊改為指數退避重試 2／4／8／16 秒（上限 60 秒），連續失敗 5 次後放棄（沿用 L0，不再打來源），頁面隱藏時不重試，成功後清除失敗計數；`?diag=1` 顯示「退避重試中／已放棄」並有「重試失敗分塊」按鈕（`retryFailed()`）。`tools/lod_retry_test.mjs`（route 注入）：L2_6_1 一次 503 → failed 沿用 L0 → 2 秒後自動載回 ok（共 2 次請求，不重整頁面）；L2_7_1 持續 404 → 5 次後 gaveup，之後 8 秒無新請求；`retryFailed()` 後再試；非有限值 0、預算內、console 0。GPT 的 8 項預算單元測試仍通過。
+- **觀測面板「重新讀取」競態**（GPT Issue #8，推導正確）：`observe.js` 影像卡與 ISS 卡每次載入取序號，每個 `await` 後檢查是否被更新的請求取代，過時的成功或失敗都不寫入 DOM。`tools/observe_race_test.mjs`（route 控制 LASCO C2 來源）：A 慢成功→B 快失敗 最終「失敗／—」無影像；A 慢失敗→B 快成功 最終已載入 1 張；連按 20 次只有最後一次寫入（1 張影像）、無未處理 rejection。
