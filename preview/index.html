@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="ARC：第一人稱、真實比例、可自由飛行的網頁 3D 宇宙探索（測試版）。">
+<title>arc — 第一人稱真實比例宇宙</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="favicon.svg">
+<link rel="manifest" href="site.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="arc">
+<meta property="og:title" content="arc — 第一人稱真實比例宇宙">
+<meta property="og:description" content="真實比例、真實星曆的網頁 3D 宇宙，可自由飛行；觀測／推算／模擬逐一標示。測試版。">
+<meta property="og:type" content="website">
+<meta property="og:image" content="docs/screens/opening.jpg">
+<link rel="stylesheet" href="css/app.css">
+<!-- importmap 必須在任何模組預載之前：預載的模組一完成下載就會解析其 import 的裸名「three」，若此時 importmap 尚未登錄會解析失敗並讓整個模組圖報錯（第二次造訪、快取命中時必現，畫面停在「初始化…」） -->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+<!-- 模組預載（AUDIT B4）：main.js 的靜態 import 圖一次並行下載，避免逐層瀑布；清單由 tools/test_modulepreload.mjs 與 import 圖比對 -->
+<link rel="modulepreload" href="vendor/three/three.module.js">
+<link rel="modulepreload" href="js/astro.js">
+<link rel="modulepreload" href="js/audio.js">
+<link rel="modulepreload" href="js/bodies.js">
+<link rel="modulepreload" href="js/catalog.js">
+<link rel="modulepreload" href="js/controls.js">
+<link rel="modulepreload" href="js/earthlayers.js">
+<link rel="modulepreload" href="js/earthlod.js">
+<link rel="modulepreload" href="js/earthview.js">
+<link rel="modulepreload" href="js/earthweather.js">
+<link rel="modulepreload" href="js/earthwx.js">
+<link rel="modulepreload" href="js/engine.js">
+<link rel="modulepreload" href="js/observe.js">
+<link rel="modulepreload" href="js/shaders.js">
+<link rel="modulepreload" href="js/textures.js">
+<link rel="modulepreload" href="js/ui.js">
+<link rel="modulepreload" href="js/units.js">
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="fx"></canvas>
+<div id="bars"></div>
+<div id="labels"></div>
+
+<div id="hud">
+  <div class="top">
+    <div class="brand"><b class="logo" role="img" aria-label="arc"><svg viewBox="-3 -3 376 106" preserveAspectRatio="xMinYMid meet" aria-hidden="true"><use href="#arc-logo"/></svg></b><small>測試版 · 原 NIC Deep Field</small></div>
+    <div class="search">
+      <input id="q" type="search" placeholder="搜尋天體或星系" title="例如：地球、木星、M31、NGC 7293、天狼星、TRAPPIST-1 e、Sgr A*" autocomplete="off" spellcheck="false">
+      <div id="results" class="results"></div>
+    </div>
+    <div class="topright">
+      <button id="tab-obs" class="txt" title="真實觀測：SDO、GOES、Himawari、ISS">真實觀測</button>
+      <button id="tab-3d" hidden>3D</button>
+      <button id="btn-settings" class="icon" title="設定與資料來源" aria-label="設定">⚙</button>
+      <button id="btn-full" class="icon" title="全螢幕（G）" aria-label="全螢幕">⛶</button>
+      <button id="btn-hide" class="icon" title="隱藏介面（H）" aria-label="隱藏介面">◻</button>
+    </div>
+  </div>
+  <div class="mid">
+    <nav class="dest" id="dest"><div class="list" id="dest-list"></div></nav>
+    <div></div>
+    <aside class="info" id="info" style="display:none"></aside>
+  </div>
+  <div class="bottom">
+    <div class="status" id="status"></div>
+    <div class="controls">
+      <div class="grp">
+        <button id="b-stop" title="停止懸浮（空白鍵）">停止</button>
+        <button id="b-orbit" title="自動環繞目前目標（O）">環繞</button>
+        <button id="b-near" title="按住靠近">靠近</button>
+        <button id="b-far" title="按住拉遠">拉遠</button>
+        <button id="b-reset" title="重設視角，朝向目標、北極朝上（V）">重設視角</button>
+        <button id="b-earth" title="返回地球（B）">返回地球</button>
+      </div>
+      <div class="grp">
+        <span class="hint">速度</span>
+        <button id="b-slow" title="減速（Z／滾輪）">−</button>
+        <button id="b-fast" title="加速（X／滾輪）">＋</button>
+        <button id="b-auto" class="active" title="自動速度：依與最近天體的距離調整">自動</button>
+        <button id="b-warp" title="超光速巡航（模擬視覺效果）">光速</button>
+      </div>
+      <div class="grp">
+        <span class="hint">時間</span>
+        <select id="rate">
+          <option value="0">暫停</option><option value="1" selected>即時</option><option value="60">×60</option><option value="600">×600</option><option value="3600">×3600</option><option value="86400">1 天/秒</option><option value="864000">10 天/秒</option><option value="8640000">100 天/秒</option>
+        </select>
+        <button id="b-now" title="回到現在時間">現在</button>
+      </div>
+      <span class="hint keys">WASD 移動 · R/F 升降 · 按住 Shift 光速 · 拖曳環視 · 滾輪調速 · H 隱藏介面 · C 寬銀幕</span>
+    </div>
+  </div>
+</div>
+<button id="btn-music" class="icon" title="播放合成低頻音景" aria-label="播放合成低頻音景" aria-pressed="false">♫</button>
+<button id="restore" title="顯示介面（H）">介面</button>
+
+<div id="title-card"><div class="t-zh"></div><div class="t-en"></div><div class="t-sub"></div></div>
+
+<div id="touch">
+  <div class="joy" id="joy"><div class="knob" id="knob"></div></div>
+  <div class="vbtns"><button id="t-up" aria-label="上升">▲</button><button id="t-down" aria-label="下降">▼</button></div>
+</div>
+
+<div id="settings" class="panel"></div>
+<div id="observe"></div>
+<div id="toast"></div>
+
+<!-- ARC 標準字（負責人 2026-10-28：仿《沙丘》電影海報標題字的風格——極細等粗線條、幾何、寬扁、極寬字距；自繪 SVG 路徑，不使用任何商標字型） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <!-- 小寫 a r c（負責人 10-28：arc 用小寫）：x 字高 100；a 為單層圓碗＋右豎、r 為豎＋四分之一圓肩、c 為右側開口的圓 -->
+  <symbol id="arc-logo" viewBox="-3 -3 376 106">
+    <g fill="none" stroke="currentColor" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M100 0 V100 M100 50 A50 50 0 1 0 100 50.01" vector-effect="non-scaling-stroke"/>
+      <path d="M160 100 V0 M160 48 A48 48 0 0 1 208 0 H222" vector-effect="non-scaling-stroke"/>
+      <path d="M368.3 17.9 A50 50 0 1 0 368.3 82.1" vector-effect="non-scaling-stroke"/>
+    </g>
+  </symbol>
+</svg>
+<div id="loading">
+  <h1 class="logo" role="img" aria-label="arc"><svg viewBox="-3 -3 376 106" aria-hidden="true"><use href="#arc-logo"/></svg></h1>
+  <span class="beta">測試版 · 部分功能尚未完整驗證</span>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="msg" id="lmsg">初始化…</div>
+  <div class="errs" id="lerrs"></div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+<noscript>此網站需要啟用 JavaScript 與 WebGL。</noscript>
+</body>
+</html>
