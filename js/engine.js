@@ -66,6 +66,8 @@ export class Engine {
     this.sunIntensity = 1.0;
     this.exposureMode = 'auto'; // auto | stars | bodies
     this.starExposure = 1.0;
+    this.skyBase = 0.55;        // Tycho 全天圖（含細星點）基礎強度
+    this.milkyBase = 1.6;       // 瀰漫銀河層基礎強度（曝光連動；以朝銀心截圖調到「長曝光照片」等級的可見度）
     this.bodyExposure = 1.0;
     this.showLabels = true;
     this.showOrbits = false;
@@ -144,7 +146,7 @@ export class Engine {
     quad.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
     this.skyMat = new THREE.ShaderMaterial({
       vertexShader: SH.SKY_VERT, fragmentShader: SH.SKY_FRAG + '',
-      uniforms: { uSky: { value: null }, uIntensity: { value: 0.0 }, uInvProj: { value: new THREE.Matrix4() }, uInvView: { value: new THREE.Matrix4() } },
+      uniforms: { uSky: { value: null }, uIntensity: { value: 0.0 }, uMilky: { value: null }, uMilkyIntensity: { value: 0.0 }, uInvProj: { value: new THREE.Matrix4() }, uInvView: { value: new THREE.Matrix4() } },
       depthTest: false, depthWrite: false,
     });
     this.skyMesh = new THREE.Mesh(quad, this.skyMat);
@@ -166,10 +168,19 @@ export class Engine {
     this.scene.add(this.bhMesh);
   }
 
-  setSkyTexture(tex) {
+  setSkyTexture(tex, milky = null) {
+    // flipY 必須關閉：天空著色器自己算 v = 0.5 − dec/π（v=0 為北天極＝圖檔第一列）；three.js 預設 flipY=true 會把圖上下翻轉，
+    // 整張全天圖南北顛倒（HYG 星點位置正確、底圖星點與銀河卻鏡射，天狼星處畫的是 γ Gem）。AUDIT A13。
+    tex.flipY = false; tex.needsUpdate = true;
     tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = THREE.RepeatWrapping; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.anisotropy = this.maxAniso;
-    this.skyMat.uniforms.uSky.value = tex; this.skyMat.uniforms.uIntensity.value = 0.55;
+    this.skyMat.uniforms.uSky.value = tex; this.skyMat.uniforms.uIntensity.value = this.skyBase;
     this.bhMat.uniforms.uSky.value = tex;
+    if (milky) {
+      // 瀰漫銀河層（線性值，增益已烘入；見 tools/build_milkyway.py）。缺檔時只少了銀河帶，星點與 Tycho 圖照常
+      milky.flipY = false; milky.needsUpdate = true;
+      milky.colorSpace = THREE.NoColorSpace; milky.wrapS = THREE.RepeatWrapping; milky.minFilter = THREE.LinearMipmapLinearFilter; milky.anisotropy = this.maxAniso;
+      this.skyMat.uniforms.uMilky.value = milky; this.skyMat.uniforms.uMilkyIntensity.value = this.milkyBase;
+    }
   }
 
   // stars: Float32Array [x,y,z(pc), mag, ci, id] × N ；最後附加太陽
@@ -217,20 +228,21 @@ export class Engine {
     const want = new Set();
     for (const b of BODIES) for (const k of ['day', 'night', 'brc', 'normal', 'map', 'radarMap']) if (b.textures[k]) want.add(b.textures[k]);
     want.add('assets/textures/tycho_skymap_2880.jpg');
+    want.add('assets/textures/milkyway_diffuse_2048.jpg');
     const total = want.size; let done = 0;
     this.textures = {};
     manager.onProgress = () => { };
     const promises = [...want].map((p) => new Promise((resolve) => {
       loader.load(p, (t) => {
         t.anisotropy = this.maxAniso; t.wrapS = THREE.RepeatWrapping;
-        const linear = p.includes('brc') || p.includes('normal');
+        const linear = p.includes('brc') || p.includes('normal') || p.includes('milkyway');
         t.colorSpace = linear ? THREE.NoColorSpace : THREE.SRGBColorSpace;
         this.textures[p] = t; this.textureStatus[p] = 'ok'; done++; onProgress?.(done, total, p, true); resolve(t);
       }, undefined, () => { this.textureStatus[p] = 'error'; done++; onProgress?.(done, total, p, false); resolve(null); });
     }));
     return Promise.all(promises).then(() => {
       const sky = this.textures['assets/textures/tycho_skymap_2880.jpg'];
-      if (sky) this.setSkyTexture(sky);
+      if (sky) this.setSkyTexture(sky, this.textures['assets/textures/milkyway_diffuse_2048.jpg'] || null);
       this._buildSolarSystem();
       // 地球分塊 LOD（靜態分塊金字塔；manifest 不存在時標示「未安裝」，維持 4K）
       if (this.opts.earthLod !== false && this.bodies.get('earth')?.mesh.material.uniforms.uTile) this.earthLod = new EarthLod(this, this.opts.tilesPath || 'assets/textures/earth_tiles');
@@ -695,7 +707,8 @@ export class Engine {
     this.starExposure = lerp(this.starExposure, star, 0.08);
     this.bodyExposure = lerp(this.bodyExposure, body, 0.08);
     this.starMat.uniforms.uExposure.value = this.starExposure;
-    this.skyMat.uniforms.uIntensity.value = 0.55 * this.starExposure;
+    this.skyMat.uniforms.uIntensity.value = this.skyBase * this.starExposure;
+    this.skyMat.uniforms.uMilkyIntensity.value = this.skyMat.uniforms.uMilky.value ? this.milkyBase * this.starExposure : 0;
     this.coverage = coverage;
     // 依鄰近天體視角大小微調光暈（遠離時 0.75、貼近受光天體時 0.45，避免行星邊緣過度泛光）；不改變天文資料及光照來源。
     if (this.bloom) {
@@ -742,6 +755,7 @@ export class Engine {
     const atmoVis = e.atmo ? e.atmo.visible : null; if (e.atmo) e.atmo.visible = false;
     const starsVis = this.stars ? this.stars.visible : null; if (this.stars) this.stars.visible = false;
     const skyI = this.skyMat.uniforms.uIntensity.value; this.skyMat.uniforms.uIntensity.value = 0;
+    const milkyI = this.skyMat.uniforms.uMilkyIntensity.value; this.skyMat.uniforms.uMilkyIntensity.value = 0;
     const count = () => { const s = this.scanNonFinite(scale); return s; };
     const white = (scale2) => {
       const pr = this.renderer.getPixelRatio(); const w = Math.max(8, Math.floor(this.width * pr * scale2)), h = Math.max(8, Math.floor(this.height * pr * scale2));
@@ -766,7 +780,7 @@ export class Engine {
       if (lod && level > 0) { for (const arr of lod.patches.values()) for (const p of arr) p.visible = false; e.mesh.material.visible = true; base = white(scale); for (const [lv, arr] of lod.patches) for (const p of arr) p.visible = lv === level; e.mesh.material.visible = level === 0; }
       result = { level, lodPixels: withLod, basePixels: base, ratio: base ? withLod / base : 1, holes: lodHoles, holeFraction: withLod ? lodHoles / withLod : 0, altitudeKm: Math.round(e.group.position.length() - e.def.radius) };
     } finally {
-      setFlat(0); if (e.atmo) e.atmo.visible = atmoVis; if (this.stars) this.stars.visible = starsVis; this.skyMat.uniforms.uIntensity.value = skyI;
+      setFlat(0); if (e.atmo) e.atmo.visible = atmoVis; if (this.stars) this.stars.visible = starsVis; this.skyMat.uniforms.uIntensity.value = skyI; this.skyMat.uniforms.uMilkyIntensity.value = milkyI;
     }
     return result;
   }

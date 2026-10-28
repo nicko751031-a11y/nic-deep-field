@@ -41,6 +41,15 @@
    "files": 41,
    "bytes": 18081323,
    "note": "由 GitHub Actions 工作流程 arc-earth-tiles 以 tools/build_earth_tiles.py 產生；manifest.json 含每塊 SHA-256。多日／多月歷史合成，不是即時影像，不含真實立體地形。"
+  },
+  "milkyway_diffuse": {
+   "name": "瀰漫銀河層（由 NASA Tycho 全天圖影像處理取得）",
+   "source": "assets/textures/tycho_skymap_2880.jpg（NASA-3D-Resources，Tycho Star Map，公眾領域）",
+   "tool": "tools/build_milkyway.py（中值濾波 7 px → 高斯模糊 6／16 px 各半 → 減底噪 1.5 → γ 0.75 → 色度大範圍模糊 → 增益 ×6 → 2048×1024 JPEG q92）",
+   "classification": "實際觀測影像處理（非程序生成）；只呈現星點密度形成的銀河帶，亮度為顯示用增益，不代表真實輻射量",
+   "sha256": "4e4b7ae741c9acb130be52b789211ad53245bf007e3bc6f77f47950cf124824d",
+   "bytes": 122856,
+   "built": "2026-10-28"
   }
  },
  "notes": [
@@ -48,7 +57,8 @@
   "深空天體：OpenNGC 全部 NGC/IC（排除重複與不存在項目）；距離依序取「文獻值（手動整理）」、「視差」、「紅移（哈伯定律 H0=70 粗估）」，其餘顯示未知。",
   "系外行星：Open Exoplanet Catalogue 2023-10 版「已確認」清單；僅有軌道與大小資料，外觀皆為推測。",
   "未涵蓋：PGC/UGC 等更暗星系、Gaia 完整星表、星系團目錄、系外行星最新發現（NASA Exoplanet Archive 在建置環境無法連線）。",
-  "地球高解析分塊：NASA Blue Marble Next Generation 2004 年 7 月全球圖切成 2048² 分塊（8K／16K），依高度自動切層；仍為歷史合成影像，雲層與夜燈維持 4K 全球圖。"
+  "地球高解析分塊：NASA Blue Marble Next Generation 2004 年 7 月全球圖切成 2048² 分塊（8K／16K），依高度自動切層；仍為歷史合成影像，雲層與夜燈維持 4K 全球圖。",
+  "星空背景：HYG 星點亮度為感知曲線（通量^0.45，8 等星仍可見），瀰漫銀河層由 Tycho 圖處理取得；兩者都是顯示用亮度，不是輻射量測。"
  ],
  "earth_layers": {
   "verified_on": "2026-10-27",

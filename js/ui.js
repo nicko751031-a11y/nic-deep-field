@@ -211,7 +211,8 @@ export class UI {
     </table>`;
     const tb = $('s-textures');
     tb.innerHTML = `<table>${BODIES.map((b) => `<tr><td>${b.zh}</td><td>${b.textures.src === 'observed' ? '<span class="badge badge-observed">實際觀測</span>' : '<span class="badge badge-procedural">程序模擬</span>'}${escapeHtml(b.textures.note)}</td></tr>`).join('')}
-      <tr><td>全天背景</td><td><span class="badge badge-observed">實際觀測</span>NASA Tycho 星表全天圖（2880×1440，含銀河），經 NASA-3D-Resources 倉庫取得；另疊加 HYG 星表的星點。</td></tr>
+      <tr><td>全天背景</td><td><span class="badge badge-observed">實際觀測</span>NASA Tycho 星表全天圖（2880×1440，含銀河），經 NASA-3D-Resources 倉庫取得；另疊加 HYG 星表的星點（亮度為感知曲線，非線性通量）。</td></tr>
+      <tr><td>瀰漫銀河層</td><td><span class="badge badge-observed">實際觀測</span>影像處理：由上述 Tycho 全天圖以中值濾波去除星點、高斯模糊後取出的銀河帶（2048×1024，<code>tools/build_milkyway.py</code>），強度隨曝光連動；不是程序生成。</td></tr>
       <tr><td>地球分塊 LOD</td><td>${(() => { const s = engine.earthLod?.status(); if (!s) return '已關閉'; if (s.state === 'missing') return '未安裝高解析分塊（沿用 4K）'; if (s.state !== 'ready') return `無法讀取（${escapeHtml(engine.earthLod.error || s.state)}）`; return `${s.synthetic ? '<span class="badge badge-procedural">合成測試資料</span>' : '<span class="badge badge-observed">實際觀測</span>'}目前 L${s.level}（${s.size}px），已載入 ${s.loaded} 塊、失敗 ${s.failed}，${s.bytesMB} MB；最高 L${s.maxLevel}。${escapeHtml(engine.earthLod.manifest?.classification || '')}`; })()}</td></tr>
       <tr><td>載入狀態</td><td>${Object.entries(engine.textureStatus).map(([p, st]) => `${p.split('/').pop()}：${st === 'ok' ? '<span style="color:var(--ok)">成功</span>' : '<span style="color:var(--err)">失敗</span>'}`).join('<br>')}</td></tr></table>`;
   }

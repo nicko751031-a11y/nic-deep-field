@@ -343,12 +343,15 @@ export const STAR_VERT = /* glsl */`
     return vec3(r, g, b);
   }
   void main() {
-    vColor = bvToRgb(aCi);
     float flux = pow(10.0, -0.4 * (aMag - 1.0)) * uExposure;  // 1 等星 = 1
     // 真實觀感：亮星看起來更大（光暈），暗星只剩 1 像素
     float size = clamp(1.2 + 1.9 * log2(1.0 + flux * 2.0), 1.0, 14.0) * uSizeScale;
-    vAlpha = clamp(flux, 0.0, 1.0) * 0.95 + 0.05 * clamp(flux * 4.0, 0.0, 1.0);
-    vAlpha *= smoothstep(0.0, 0.02, flux);
+    // 亮度用感知曲線（通量^0.45）：線性通量會讓 6 等星 alpha≈0.01、8 等星被捨棄，4 萬顆星只剩幾百顆看得見；
+    // 感知曲線下 8 等星是極暗的一點、6 等星明顯可見、1 等以上飽和（接近長曝光照片／暗適應的眼睛）
+    vAlpha = clamp(pow(max(flux, 0.0), 0.45), 0.0, 1.0);
+    vAlpha *= smoothstep(0.0, 0.0006, flux);
+    // 暗星幾乎無色（暗視覺），亮星才看得出 B−V 的顏色
+    vColor = mix(vec3(1.0), bvToRgb(aCi), clamp(0.3 + 0.7 * sqrt(clamp(flux, 0.0, 1.0)), 0.0, 1.0));
     gl_PointSize = size * uPixelRatio;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
@@ -388,7 +391,10 @@ export const SKY_FRAG = /* glsl */`
   ${SAFE_GLSL}
   varying vec3 vDir;
   uniform sampler2D uSky; uniform float uIntensity;
+  // 瀰漫銀河層：由 Tycho 全天圖中值濾波取出的星點密度帶（tools/build_milkyway.py，增益 ×6 已烘入貼圖，這裡除回）
+  uniform sampler2D uMilky; uniform float uMilkyIntensity;
   const float OBL = 0.40909;  // 23.4393°
+  const float MILKY_GAIN = 6.0;
   void main() {
     vec3 d = normalize(vDir);
     // 世界(three) → 黃道：x=x, y_ecl=-z_three, z_ecl=y_three
@@ -398,8 +404,9 @@ export const SKY_FRAG = /* glsl */`
     float ra = atan(q.y, q.x);            // -π..π
     float dec = asin(clamp(q.z, -1.0, 1.0));
     vec2 uv = vec2(0.5 + ra / 6.2831853, 0.5 - dec / 3.1415927);
-    vec3 col = texture2D(uSky, uv).rgb;
-    gl_FragColor = vec4(safeColor(col * uIntensity), 1.0);
+    vec3 col = texture2D(uSky, uv).rgb * uIntensity;
+    col += texture2D(uMilky, uv).rgb * (uMilkyIntensity / MILKY_GAIN);
+    gl_FragColor = vec4(safeColor(col), 1.0);
   }
 `;
 

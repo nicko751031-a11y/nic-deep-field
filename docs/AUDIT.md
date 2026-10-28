@@ -21,6 +21,7 @@
 | A9 | 分塊首次載入失敗後永久停留 4K，無重試 | ✅ 退避重試 5 次後放棄＋手動重試（GPT Issue #16 發現） | Claude | `lod_retry_test` 通過。 |
 | A10 | 觀測面板「重新讀取」競態：舊回應蓋掉新狀態 | ✅ 序號守衛（GPT Issue #8 發現） | Claude | `observe_race_test` 通過。 |
 | A11 | 音訊同模式 ABA 競態（舊操作清掉新 pending） | ✅ 操作序號（GPT 第三次稽核） | Claude | `audio_ui_test` ABA／反向完成序通過。 |
+| A13 | 全天背景（Tycho 圖）南北顛倒：天空著色器以 v=0 為北天極取樣，但貼圖沿用 three.js 預設 `flipY=true`，整張底圖上下鏡射；HYG 星點位置正確，底圖的星點與銀河卻在鏡射位置（天狼星處畫的是 γ Gem，誤差 1.7°–9° 隨方向而異），自專案初版即存在 | ✅ 10-28 | Claude | 負責人反映「星空不夠真實」時以離屏渲染比對 HYG 星點與底圖亮斑發現；`setSkyTexture` 設 `flipY=false`（瀰漫銀河層同）。`tools/sky_test.mjs` 以天狼星／織女星／大角星的底圖亮斑須落在畫面中心 0.5° 內鎖定。 |
 | A12 | 第二次造訪／重新整理停在「初始化…」：`modulepreload` 放在 importmap 之前，快取命中時裸名 `three` 解析失敗（PR #42 引入，09:58–上架期間正式站受影響） | ✅ 11:4x 熱修 | Claude | importmap 移到預載標籤之前；`tools/reload_test.mjs` 加入例行回歸（重載、同頁導向 `?diag=1`）。教訓記入 H2：上架前回歸須包含重載路徑且必須跑完。 |
 
 ## B. 效能
