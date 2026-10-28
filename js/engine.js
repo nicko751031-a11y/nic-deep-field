@@ -63,7 +63,10 @@ export class Engine {
     this.frame = { type: 'solar' };
     this.simTime = Date.now();
     this.timeRate = 1;
-    this.sunIntensity = 1.0;
+    // 受光天體進高動態範圍：日照強度 1.4（反照率 0.5 的表面 → 0.7 線性 → ACES 約 0.6 顯示值；雲頂與受光邊緣接近 1 進 Bloom），
+    // 再由 toneExposure（相機曝光）依畫面中受光天體的占比慢速調整，像相機自動調 ISO
+    this.sunIntensity = 1.4;
+    this.toneExposure = 1.0;
     this.exposureMode = 'auto'; // auto | stars | bodies
     this.starExposure = 1.0;
     this.skyBase = 0.55;        // Tycho 全天圖（含細星點）基礎強度
@@ -104,7 +107,7 @@ export class Engine {
     this.composer.addPass(this.renderPass);
     this.useBloom = this.quality !== 'low';
     if (this.useBloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.75, 0.65, 1.0);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.75, 0.7, 0.9); // 門檻 0.9：只有真正的高光（雲頂、太陽、吸積盤、受光邊緣）發光
       this.composer.addPass(this.bloom);
     }
     this.composer.addPass(new OutputPass());
@@ -282,7 +285,7 @@ export class Engine {
         });
         if (!this.textures[T.day]) mat = this._fallbackMat(b, common);
       } else if (T.kind === 'sun') {
-        mat = new THREE.ShaderMaterial({ vertexShader: SH.SUN_VERT, fragmentShader: SH.SUN_FRAG, uniforms: { uTime: { value: 0 }, uIntensity: { value: 1.3 } } });
+        mat = new THREE.ShaderMaterial({ vertexShader: SH.SUN_VERT, fragmentShader: SH.SUN_FRAG, uniforms: { uTime: { value: 0 }, uIntensity: { value: 2.0 } } }); // 過曝的白盤：Bloom 與眩光呈現刺眼感，但日盤邊界仍須可辨識
       } else {
         let map = T.map ? this.textures[T.map] : null;
         if (T.kind === 'venus') map = TX.makeVenusCloudTexture();
@@ -292,7 +295,7 @@ export class Engine {
         mat = new THREE.ShaderMaterial({
           vertexShader: SH.PLANET_VERT, fragmentShader: SH.PLANET_FRAG,
           uniforms: { ...common, uMap: { value: map }, uHasMap: { value: map ? 1 : 0 }, uColor: { value: new THREE.Color(...(T.color || [0.5, 0.5, 0.5])) },
-            uLimb: { value: T.kind === 'gas' ? 0.75 : T.kind === 'venus' ? 0.6 : 0.25 },
+            uLimb: { value: T.kind === 'gas' ? 0.75 : T.kind === 'venus' ? 0.6 : 0.25 }, uDesat: { value: T.desat || 0 },
             uAtmoColor: { value: new THREE.Color(...(b.atmosphere?.color || [1, 1, 1])) }, uAtmoStrength: { value: b.atmosphere ? b.atmosphere.density : 0 },
             uHasRings: { value: b.rings ? 1 : 0 }, uRingMap: { value: null }, uRingInner: { value: b.rings?.inner || 0 }, uRingOuter: { value: b.rings?.outer || 0 },
             uRingNormal: { value: new V3(0, 1, 0) }, uBodyCenter: { value: new V3() } },
@@ -335,7 +338,7 @@ export class Engine {
   }
 
   _fallbackMat(b, common) {
-    return new THREE.ShaderMaterial({ vertexShader: SH.PLANET_VERT, fragmentShader: SH.PLANET_FRAG, uniforms: { ...common, uMap: { value: null }, uHasMap: { value: 0 }, uColor: { value: new THREE.Color(0.2, 0.3, 0.5) }, uLimb: { value: 0.3 }, uAtmoColor: { value: new THREE.Color(0.5, 0.7, 1) }, uAtmoStrength: { value: 1 }, uHasRings: { value: 0 }, uRingMap: { value: null }, uRingInner: { value: 0 }, uRingOuter: { value: 0 }, uRingNormal: { value: new V3(0, 1, 0) }, uBodyCenter: { value: new V3() } } });
+    return new THREE.ShaderMaterial({ vertexShader: SH.PLANET_VERT, fragmentShader: SH.PLANET_FRAG, uniforms: { ...common, uMap: { value: null }, uHasMap: { value: 0 }, uColor: { value: new THREE.Color(0.2, 0.3, 0.5) }, uLimb: { value: 0.3 }, uDesat: { value: 0 }, uAtmoColor: { value: new THREE.Color(0.5, 0.7, 1) }, uAtmoStrength: { value: 1 }, uHasRings: { value: 0 }, uRingMap: { value: null }, uRingInner: { value: 0 }, uRingOuter: { value: 0 }, uRingNormal: { value: new V3(0, 1, 0) }, uBodyCenter: { value: new V3() } } });
   }
 
   setVenusRadar(on) {
@@ -558,8 +561,8 @@ export class Engine {
       if (e.ring) { const ru = e.ring.material.uniforms; ru.uSunDir.value.copy(sunDir); ru.uCenter.value.copy(rel); ru.uNormal.value.copy(e.axes?.yb || new V3(0, 1, 0)); ru.uSunIntensity.value = this.sunIntensity * this.bodyExposure; }
       if (e.atmo) { const au = e.atmo.material.uniforms; au.uCenter.value.copy(rel); au.uSunDir.value.copy(sunDir); au.uSunIntensity.value = this.sunIntensity * this.bodyExposure; }
       if (e.glow) {
-        const s = clamp(dist * 0.0035, b.radius * 2.2, dist * 0.35);
-        e.glow.scale.set(s, s, 1); e.glow.material.opacity = 0.85 * this.bodyExposure;
+        const s = clamp(dist * 0.0035, b.radius * 1.3, dist * 0.35);
+        e.glow.scale.set(s, s, 1); e.glow.material.opacity = 0.25 * this.bodyExposure; // 本體已過曝，光暈只需輔助（0.85×2.2R 會把日盤糊成一團霧）
       }
       // 太小就改畫點光
       const px = angR * pxPerRad;
@@ -710,10 +713,25 @@ export class Engine {
     this.skyMat.uniforms.uIntensity.value = this.skyBase * this.starExposure;
     this.skyMat.uniforms.uMilkyIntensity.value = this.skyMat.uniforms.uMilky.value ? this.milkyBase * this.starExposure : 0;
     this.coverage = coverage;
+    // 相機曝光：受光天體填滿畫面時縮光圈（1.0 → 0.78），避免整片過曝；深空回到 1.0。慢速過渡像相機自動調 ISO。
+    // 作用在色調映射上，整個畫面（含星點與銀河）一起變暗，受光行星前的星空因此自然隱沒。
+    const expTarget = this.exposureMode === 'stars' ? 1.0 : 1.0 - 0.3 * Math.sqrt(coverage);
+    this.toneExposure = lerp(this.toneExposure, expTarget, 0.04);
+    this.renderer.toneMappingExposure = this.toneExposure;
     // 依鄰近天體視角大小微調光暈（遠離時 0.75、貼近受光天體時 0.45，避免行星邊緣過度泛光）；不改變天文資料及光照來源。
     if (this.bloom) {
-      const target = 0.75 - 0.3 * Math.sqrt(coverage);
-      this.bloom.strength = lerp(this.bloom.strength, target, 0.045);
+      // 太陽／主星填滿視野時光暈再壓低（0.3）：否則過曝日盤的 Bloom 會擴成三倍直徑的霧，看不到日盤邊緣
+      const isStar = nearest && (nearest.key === 'sun' || nearest.extra?.isStar);
+      // 黑洞：光暈 0.4，Bloom 不可擴散進事件視界（中心必須維持黑）；太陽／主星 0.45，日盤邊界要看得到（GPT 審查 PR #48）
+      const bh = nearest?.key === 'bh';
+      const target = bh ? 0.22 : (isStar ? 0.45 : 0.75) - 0.3 * Math.sqrt(coverage);
+      // 黑洞 frame 直接套用（躍遷淡黑之後才看得到，不需要慢速過渡；低幀率裝置慢速 lerp 要一分鐘才到位）
+      const k = bh ? 1 : 0.045;
+      this.bloom.strength = lerp(this.bloom.strength, target, k);
+      // 黑洞：光暈半徑 0.7 → 0.12、門檻 0.9 → 1.25（只有 Doppler 接近側的白熱部分發光），否則吸積盤的 Bloom 擴散進事件視界、中心變灰
+      // （離屏量測：Bloom 關閉時中心 0.8，開啟 0.43 強度時 69；look_test 以中心 < 14 守門）
+      this.bloom.radius = lerp(this.bloom.radius, bh ? 0.12 : 0.7, k);
+      this.bloom.threshold = lerp(this.bloom.threshold, bh ? 1.25 : 0.9, k);
     }
   }
 

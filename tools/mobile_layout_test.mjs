@@ -104,12 +104,13 @@ for (const [W, H] of SIZES) {
   if (out && W === 390) { await wake(W, H); await page.screenshot({ path: `${out}/int-${tag}-search.jpg`, type: 'jpeg', quality: 85 }); }
   await page.keyboard.press('Escape'); await page.waitForTimeout(200);
   ok(await page.evaluate(() => !document.getElementById('results').classList.contains('open')), `${tag} Escape 收合搜尋`);
-  // 音樂鈕：點一下 aria-pressed=true（可能因自動播放政策 pending，但按鈕狀態要反映），再點回 false
+  // 音樂鈕：相對初始狀態切換（開頁自動播放後初始可能已是開；無頭 Chromium 有使用者啟用，自動播放會成功）：點一下翻轉、再點一下翻回
+  const p0 = await page.getAttribute('#btn-music', 'aria-pressed');
   await page.tap('#btn-music'); await page.waitForTimeout(600);
   const p1 = await page.getAttribute('#btn-music', 'aria-pressed');
   await page.tap('#btn-music'); await page.waitForTimeout(400);
   const p2 = await page.getAttribute('#btn-music', 'aria-pressed');
-  ok(p1 === 'true' && p2 === 'false', `${tag} 音樂鈕可點：${p1} → ${p2}`);
+  ok(p1 !== p0 && p2 === p0, `${tag} 音樂鈕可點：${p0} → ${p1} → ${p2}`);
   // 資訊卡開啟時不與觸控鈕／目的地列重疊
   await page.evaluate(async () => { const cat = window.__ndf.catalog; await window.__ndf.goTo(cat.entries.find((x) => x.key === 'saturn'), { instant: true }); });
   await page.waitForTimeout(1500);

@@ -104,7 +104,11 @@ export class UI {
 
   // 標題卡：抵達／開場時畫面中央淡入的大字
   titleCard(zh, en = '', sub = '', ms = 3000) {
-    const el = $('title-card'); el.querySelector('.t-zh').textContent = zh; el.querySelector('.t-en').textContent = en; el.querySelector('.t-sub').textContent = sub;
+    const el = $('title-card'); const tz = el.querySelector('.t-zh');
+    // 「ARC」用標準字（index.html 的 #arc-logo SVG），其餘目的地名稱照常用文字
+    if (zh === 'ARC') { tz.innerHTML = '<span class="logo" role="img" aria-label="arc"><svg viewBox="-3 -3 376 106" aria-hidden="true"><use href="#arc-logo"/></svg></span>'; }
+    else tz.textContent = zh;
+    el.querySelector('.t-en').textContent = en; el.querySelector('.t-sub').textContent = sub;
     el.classList.add('show'); clearTimeout(this._tc); this._tc = setTimeout(() => el.classList.remove('show'), ms);
   }
 
@@ -167,7 +171,7 @@ export class UI {
         <li>相對論效果（光行差、都卜勒）未在飛行時模擬；「光速」只是視覺特效與壓縮旅行時間。</li>
         <li>真實觀測來源由瀏覽器直接讀取，部分來源可能因 CORS 或停機失敗；失敗時會明示，不會以舊圖冒充。</li>
       </ul></details>`;
-    $('s-audio').value = 'ambient'; // 預設選曲，須使用者點擊播放才會發聲
+    $('s-audio').value = 'ambient'; // 預設選曲；開頁會自動播放（瀏覽器擋下時等第一次操作），選「靜音」則不再自動播放
     $('s-quality').value = opts.quality;
     // 畫質／安全模式會整頁重載：先讓 main.js 把目前位置存起來（onBeforeReload），重載後還原；並拿掉網址上的 ?quality= 讓新設定真的生效
     $('s-quality').addEventListener('change', (e) => { localStorage.setItem('ndf-quality', e.target.value); opts.onBeforeReload?.(); const u = new URL(location.href); u.searchParams.delete('quality'); location.href = u.toString(); });

@@ -65,14 +65,48 @@ async function boot() {
   // 按鈕在等待期間顯示「啟動中」，點擊視為取消（off）
   // 每次操作有唯一序號：只有最後一次操作可以清除 pending 與回寫介面（避免同模式 A→off→A 的 ABA 競態：舊 A 完成不得清掉新 A 的 pending）
   let audioSeq = 0; let audioPending = null; // audioPending = { seq, mode } 或 null
-  const startAudio = async (mode) => {
-    const my = ++audioSeq; audioPending = { seq: my, mode };
+  // 音景偏好（localStorage ndf-audio）：使用者明確選的模式；開頁自動播放用這個，選「靜音」就不再自動播放
+  const AUDIO_KEY = 'ndf-audio';
+  const saveAudioPref = (mode) => { try { localStorage.setItem(AUDIO_KEY, mode); } catch (e) { /* ignore */ } };
+  const readAudioPref = () => { try { const v = localStorage.getItem(AUDIO_KEY); return ['off', 'ambient', 'organ', 'arc', 'sonify'].includes(v) ? v : 'ambient'; } catch (e) { return 'ambient'; } };
+  // audioPending = { seq, mode, auto }：auto＝開頁自動播放的嘗試（可被使用者手勢的再次嘗試取代），非 auto＝使用者明確操作
+  const startAudio = async (mode, { quiet = false, auto = false } = {}) => {
+    const my = ++audioSeq; audioPending = { seq: my, mode, auto };
     if (musicButton) musicButton.title = mode === 'off' ? '停止中' : '音訊啟動中（再點一次取消）';
     const r = await audio.start(mode);
     if (my !== audioSeq) return r; // 已被更新的操作取代：不動 pending、不回寫介面
-    audioPending = null; syncAudioUI(r); return r;
+    audioPending = null; syncAudioUI(quiet && !r.ok ? null : r); return r; // quiet：自動播放被擋下時不跳「請再點一次」
   };
-  musicButton?.addEventListener('click', () => { startAudio(audioPending && audioPending.mode !== 'off' ? 'off' : audio.mode === 'off' ? 'ambient' : 'off'); });
+  // 使用者明確操作（音樂鈕、設定選單）一律先解除自動播放的手勢監聽：之後的手勢不會再擅自開啟（GPT 審查風險 2）
+  let autoplayDisarm = null;
+  // 自動播放的嘗試還在等待（被政策擋下、最長 3 秒）時按 ♫：對使用者而言「現在沒有音樂」，所以視為「開啟」而不是「取消」（GPT 審查風險 2）；
+  // 只有使用者自己發起、仍在等待的啟動才由再點一次取消
+  musicButton?.addEventListener('click', () => {
+    autoplayDisarm?.();
+    const pendingUser = audioPending && !audioPending.auto && audioPending.mode !== 'off';
+    const pref = readAudioPref();
+    const mode = pendingUser ? 'off' : audio.mode === 'off' ? (pref === 'off' ? 'ambient' : pref) : 'off';
+    saveAudioPref(mode); startAudio(mode);
+  });
+  // 開頁自動播放背景音景（負責人 2026-10-28）：先直接嘗試；瀏覽器的自動播放政策（Chrome／Safari 都要求先有使用者操作）擋下時，
+  // 第一個操作（點擊、按鍵、觸控——開場本來就要「任何輸入即可開始飛行」）就啟動，不需要特地去按音樂鈕。安全模式不自動播放。
+  // 時序（GPT 審查，PR #49）：手勢監聽在「嘗試之前」就掛好，resume() 等待期間的第一個手勢不會漏掉；手勢當下重讀偏好與最新狀態，
+  // 使用者已明確關閉就不再開；音樂鈕／設定選單上的手勢交給它們自己處理（否則第一次按 ♫ 會先被自動開啟再被點擊關掉）。
+  const autoplayAudio = () => {
+    const mode = safe ? 'off' : readAudioPref(); if (mode === 'off') return;
+    const evs = ['pointerdown', 'keydown', 'touchstart']; let armed = true;
+    const disarm = () => { if (!armed) return; armed = false; autoplayDisarm = null; evs.forEach((ev) => window.removeEventListener(ev, onGesture, true)); };
+    const onGesture = (e) => {
+      if (e.target?.closest?.('#btn-music, #s-audio, #settings')) return; // 使用者自己操作音訊控制：不搶先
+      disarm();
+      const want = readAudioPref(); if (want === 'off' || audio.mode !== 'off') return;
+      if (audioPending && !audioPending.auto) return; // 使用者明確操作正在進行中：不干擾
+      startAudio(want, { quiet: true, auto: true }); // 自動嘗試仍在等待時，手勢內的新嘗試取代它（序號機制保證不疊加節點）
+    };
+    autoplayDisarm = disarm;
+    evs.forEach((ev) => window.addEventListener(ev, onGesture, { capture: true, passive: true }));
+    startAudio(mode, { quiet: true, auto: true }).then((r) => { if (r?.ok) disarm(); });
+  };
   const observe = new ObservePanel($('observe'), engine, (iss) => { engine.earthMarker = iss; $('observe').classList.remove('open'); goToEarthMarker(iss); });
   const isTouch = controls.isTouchDevice();
   if (isTouch) { document.body.classList.add('touch'); setTimeout(() => ui.toast('左半邊拖曳＝移動 · 右半邊拖曳＝環視 · 雙指縮放＝靠近／拉遠', 7000), 6000); }
@@ -182,14 +216,16 @@ async function boot() {
     const g = fctx.createRadialGradient(x, y, 0, x, y, rg);
     g.addColorStop(0, `rgba(255,246,228,${0.5 * I})`); g.addColorStop(0.25, `rgba(255,232,196,${0.16 * I})`); g.addColorStop(1, 'rgba(255,220,180,0)');
     fctx.fillStyle = g; fctx.fillRect(x - rg, y - rg, rg * 2, rg * 2);
-    const L = W * (0.16 + 0.22 * I);
-    for (const [h, a, c] of [[1.2, 0.42, '170,205,255'], [5, 0.12, '140,180,255'], [20, 0.04, '120,160,255']]) {
+    // 橫向光斑：只留一道寬而極淡的（負責人 10-28：細亮直線橫貫全畫面是最明顯的「遊戲感」來源）
+    const L = W * (0.14 + 0.18 * I);
+    for (const [h, a, c] of [[14, 0.05, '150,190,255']]) {
       const sg = fctx.createLinearGradient(x - L, y, x + L, y);
       sg.addColorStop(0, `rgba(${c},0)`); sg.addColorStop(0.5, `rgba(${c},${a * I})`); sg.addColorStop(1, `rgba(${c},0)`);
       fctx.fillStyle = sg; fctx.fillRect(x - L, y - h / 2, L * 2, h);
     }
+    // 鬼影：由五個減到兩個、更淡（真實鏡頭有鬼影，但一串整齊的圓環最像遊戲引擎）
     const cx = W / 2, cy = H / 2;
-    for (const [k, r, a, c] of [[-0.4, 0.018, 0.12, '255,200,160'], [-0.85, 0.03, 0.07, '180,220,255'], [-1.5, 0.05, 0.05, '255,230,200'], [0.45, 0.01, 0.14, '200,230,255'], [1.25, 0.04, 0.045, '255,210,180']]) {
+    for (const [k, r, a, c] of [[-0.55, 0.024, 0.05, '255,215,180'], [0.6, 0.012, 0.06, '200,225,255']]) {
       const gx = cx + (cx - x) * k, gy = cy + (cy - y) * k; const rr = Math.max(W, H) * r;
       const gg = fctx.createRadialGradient(gx, gy, rr * 0.55, gx, gy, rr);
       gg.addColorStop(0, `rgba(${c},0)`); gg.addColorStop(0.8, `rgba(${c},${a * I})`); gg.addColorStop(1, `rgba(${c},0)`);
@@ -368,7 +404,7 @@ async function boot() {
     onFov: (v) => { engine.camera.fov = v; engine.camera.updateProjectionMatrix(); },
     onBeforeReload: saveResume, onResetAll: resetAllSettings,
     onReport: async () => { const d = await import('./diag.js'); return d.quickReport(engine, { quality, extra: { safe, prefs, loadErrors: errors.slice(0, 20), target: controls.target, audio: audio.mode } }); },
-    onAudio: async (v) => { const r = await startAudio(v); if (r?.ok && v === 'sonify' && r.table) $('s-audio-note').innerHTML += '<br>目前音高：' + r.table.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); },
+    onAudio: async (v) => { autoplayDisarm?.(); saveAudioPref(v); const r = await startAudio(v); if (r?.ok && v === 'sonify' && r.table) $('s-audio-note').innerHTML += '<br>目前音高：' + r.table.map((x) => `${BODY_BY_KEY[x.key].zh} ${x.hz.toFixed(1)} Hz（週期 ${x.periodDays} 天，升 ${x.octaves} 個八度）`).join('；'); },
   });
   syncAudioUI(); // 開頁時音訊為 off：選單與按鈕都顯示未播放，不預先顯示音景已選
 
@@ -379,7 +415,7 @@ async function boot() {
   // 測試鉤子（瀏覽器自動化用）
   if (params.has('diag')) import('./diag.js').then((m) => m.initDiag(engine, controls, { quality })).catch((e) => console.error('診斷模式載入失敗', e));
   window.__ndf = {
-    engine, controls, catalog, goTo, earthView, earthWx,
+    engine, controls, catalog, goTo, earthView, earthWx, audio, audioState: () => ({ mode: audio.mode, nodes: audio.nodes.length, pending: audioPending ? { mode: audioPending.mode, auto: audioPending.auto } : null }),
     testPlaceOver(lat, lon, altKm) {
       const e = engine.bodies.get('earth'); if (!e?.axes) return false;
       const ax = { xb: e.axes.xb.toArray(), yb: e.axes.yb.toArray(), zb: e.axes.zb.toArray() };
@@ -403,6 +439,7 @@ async function boot() {
   $('loading').classList.add('done');
   if (resumed) setTimeout(() => ui.toast('設定已套用，已回到重載前的位置', 3500), 600);
   else setTimeout(() => ui.titleCard('ARC', '第一人稱 · 真實比例 · 測試版', '任何輸入即可開始飛行', 5200), 900);
+  autoplayAudio();
   const openT0 = performance.now();
   if (errors.length) setTimeout(() => ui.toast(`有 ${errors.length} 項資源載入失敗，詳見設定 → 載入狀態`, 6000), 6500);
 

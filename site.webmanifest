@@ -1,6 +1,6 @@
 {
-  "name": "ARC",
-  "short_name": "ARC",
+  "name": "arc",
+  "short_name": "arc",
   "description": "第一人稱、真實比例、可自由飛行的網頁 3D 宇宙探索（測試版）",
   "start_url": "./",
   "display": "standalone",

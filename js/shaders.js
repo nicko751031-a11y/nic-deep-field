@@ -75,6 +75,7 @@ export const PLANET_FRAG = /* glsl */`
   uniform float uLimb;       // 臨邊昏暗強度（氣態行星較明顯）
   uniform float uDetail;     // 近距離程序細節強度
   uniform vec3 uAtmoColor; uniform float uAtmoStrength;
+  uniform float uDesat;      // 去飽和（NASA 720 px 全球圖色彩偏濃，土星實際為淡奶油色；只調色相濃度，不改亮度）
   ${RING_SHADOW_FN}
   float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   float noise3(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -85,13 +86,15 @@ export const PLANET_FRAG = /* glsl */`
     vec3 n = normalize(vNormal);
     vec3 v = normalize(-vWorldPos);
     vec3 albedo = uHasMap > 0.5 ? texture2D(uMap, vUv).rgb : uColor;
+    albedo = mix(albedo, vec3(dot(albedo, vec3(0.299, 0.587, 0.114))), uDesat);
     // 近距離程序細節：只調變亮度（標示為程序細節，非真實地形）
     if (uDetail > 0.0) {
       float d = noise3(normalize(vObjPos) * 900.0) * 0.5 + noise3(normalize(vObjPos) * 3500.0) * 0.5;
       albedo *= 1.0 + (d - 0.5) * uDetail;
     }
     float ndl = dot(n, uSunDir);
-    float diff = smoothstep(-0.03, 0.12, ndl) * max(ndl, 0.0) + 0.02 * smoothstep(-0.03, 0.12, ndl);
+    // 夜側幾乎不補光（太空中沒有環境光；0.02 的補光會讓夜側灰掉、像遊戲）
+    float diff = smoothstep(-0.03, 0.12, ndl) * max(ndl, 0.0) + 0.004 * smoothstep(-0.03, 0.12, ndl);
     float mu = clamp(dot(n, v), 0.0, 1.0);
     float limb = mix(1.0, pow(mu, 0.45), uLimb); // pow-ok：mu 已 clamp ≥ 0
     float sh = ringShadow(vWorldPos, uSunDir);
@@ -151,7 +154,7 @@ export const EARTH_FRAG = /* glsl */`
     float ndl = dot(nWorld, uSunDir);
     float ndl0 = dot(n, uSunDir);
     float dayF = smoothstep(-0.08, 0.18, ndl0);
-    float diff = max(ndl, 0.0) * 0.92 + 0.08 * dayF;
+    float diff = max(ndl, 0.0) * 0.98 + 0.02 * dayF; // 補光壓到 0.02：夜側真的黑，城市燈光才顯得像照片
     // 海面鏡面反射
     vec3 h = normalize(uSunDir + v);
     float spec = pow(max(dot(nWorld, h), 0.0), 140.0) * ocean * 0.45 * smoothstep(0.0, 0.1, ndl0);
@@ -164,7 +167,7 @@ export const EARTH_FRAG = /* glsl */`
     float cloudLit = max(ndl0, 0.0) * 0.95 + 0.05 * dayF;
     vec3 twilight = vec3(1.0, 0.55, 0.25);
     float tw = exp(-sqr(ndl0 / 0.10)) * 0.6; // 夜側 ndl0 < 0：不可用 pow(負數, 2.0)（Apple GPU → NaN → 整個夜側純黑，A2）
-    vec3 cloudCol = mix(vec3(1.0), twilight, tw) * cloudLit;
+    vec3 cloudCol = mix(vec3(0.93), twilight, tw) * cloudLit; // 雲反照率 0.93：日照 1.4 下只有最厚的雲頂進 Bloom，不會整片泛白（GPT 審查）
     vec3 col = mix(surf, cloudCol, clamp(clouds * 1.15, 0.0, 1.0));
     // 近即時紅外線（10.3 µm）：GIBS 影像冷雲頂亮、地表暗；只在影像涵蓋範圍內疊加，透明＝缺測。
     // 顯示為灰白雲層亮度（非真彩色、非雲高），夜側也可見（紅外線不靠日照）
@@ -186,7 +189,7 @@ export const EARTH_FRAG = /* glsl */`
     float mu = clamp(dot(n, v), 0.0, 1.0);
     float fres = pow(max(1.0 - mu, 0.0), 2.5);
     float lit = smoothstep(-0.3, 0.3, ndl0);
-    col += uAtmoColor * fres * lit * 0.55;
+    col += uAtmoColor * fres * lit * 0.45; // 邊緣散射與 Bloom 分開調：0.45 讓藍邊是漸層而不是白描邊（GPT 審查）
     col += twilight * exp(-sqr(ndl0 / 0.14)) * fres * 0.5;
     // 整體薄霧（高空看地面偏藍）
     col = mix(col, uAtmoColor * lit * 0.9, (1.0 - mu) * 0.08 * lit);
@@ -284,7 +287,7 @@ export const RING_FRAG = /* glsl */`
     float sameSide = sign(dot(uNormal, v)) == sign(ndl) ? 1.0 : 0.0;
     // 受光面：反射；背光面：透射（薄環有一定透光，光學厚度高處較暗）
     float lit = abs(ndl);
-    float bright = mix(lit * 0.45 * (1.0 - ring.a * 0.8) + 0.03, lit * 1.0, sameSide);
+    float bright = mix(lit * 0.5 * (1.0 - ring.a * 0.8) + 0.03, lit * 1.3, sameSide); // 受光面 1.3：環粒子冰反照率高，照片中環比本體亮
     // 反向散射增亮（相位角小時環更亮）
     float phase = pow(max(dot(v, uSunDir), 0.0), 2.0) * 0.25 + 1.0;
     vec3 col = ring.rgb * bright * shadow * phase * uSunIntensity;
@@ -320,9 +323,10 @@ export const SUN_FRAG = /* glsl */`
     float spots = smoothstep(0.62, 0.72, fbm(p * 6.0 + 3.0)) * smoothstep(0.3, 0.9, fbm(p * 25.0 + 7.0)); // 偶發黑子（示意）
     float mu = max(dot(normalize(vNormal), normalize(-vWorldPos)), 0.0);
     float limb = 0.35 + 0.65 * pow(mu, 0.6); // 臨邊昏暗（可見光約 u≈0.6）// pow-ok：mu = max(…, 0)
-    vec3 base = vec3(1.0, 0.86, 0.62);
-    vec3 col = base * (0.85 + 0.35 * g) * limb;
-    col = mix(col, col * 0.25, spots * 0.9);
+    // 相機對太陽永遠過曝：本體接近白、米粒對比壓低（過曝後只看得到臨邊與黑子），刺眼感交給 Bloom 與眩光
+    vec3 base = vec3(1.0, 0.94, 0.84);
+    vec3 col = base * (0.92 + 0.16 * g) * limb;
+    col = mix(col, col * 0.3, spots * 0.9);
     gl_FragColor = vec4(safeColor(col * uIntensity), 1.0);
   }
 `;
@@ -429,19 +433,26 @@ export const BH_FRAG = /* glsl */`
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise2(vec2 x) { vec2 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash(i), hash(i + vec2(1,0)), f.x), mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y); }
+  const float DISK_T = 12.0;   // flow-map 相位重置週期（秒）
+  float diskNoise(float phi, float r, float t) {
+    float ang = phi - t * 0.6 * pow(max(r, 1e-3), -1.5) * 8.0;
+    return noise2(vec2(ang * 1.5, r * 1.6)) * 0.55 + noise2(vec2(ang * 4.0, r * 4.0)) * 0.3 + noise2(vec2(ang * 9.0, r * 9.0)) * 0.15;
+  }
   // 吸積盤顏色（藝術化：溫度隨半徑下降，內緣偏白藍、外緣偏橘紅）＋ 近似都卜勒射束與重力紅移
   vec4 diskSample(vec3 p, vec3 rayDir) {
     float r = length(p);
     if (r < uDiskInner || r > uDiskOuter) return vec4(0.0);
     float phi = atan(p.z, p.x);
     float t = (r - uDiskInner) / (uDiskOuter - uDiskInner);
-    // 克卜勒角速度 ∝ r^-1.5；內側轉得快，形成細密的拉絲紋理（薄盤、絲狀，而非塊狀）
-    float ang = phi - uTime * 0.6 * pow(max(r, 1e-3), -1.5) * 8.0;
-    float n = noise2(vec2(ang * 2.0, r * 14.0)) * 0.5 + noise2(vec2(ang * 6.0, r * 40.0)) * 0.3 + noise2(vec2(ang * 18.0, r * 90.0)) * 0.2;
-    float fil = 0.85 + 0.15 * sin(r * 22.0 + n * 9.0);         // 細環絲（以雜訊打散，避免規則同心環）
-    float emis = pow(max(1.0 - t, 0.0), 1.5) * (0.45 + 0.7 * n) * fil;
-    // 配色：內緣白熱、中段淡金、外緣暖橘（藝術化；實際盤溫度決定光譜，此處僅示意）
-    vec3 hot = vec3(1.0, 0.97, 0.92), gold = vec3(1.0, 0.86, 0.62), warm = vec3(0.95, 0.58, 0.28);
+    // 盤面紋理：克卜勒角速度 ∝ r^-1.5 的差速旋轉把雜訊沿方位角拉成絲狀。
+    // 兩個修正（GPT 第四輪：等距細環、唱片紋）：
+    // (1) 差速旋轉若無限累積，相鄰半徑的相位差隨時間線性增大，幾十秒後就把紋理纏成等距細環（徑向週期 ∝ 1/t）；
+    //     改用 flow-map 交叉淡入：兩層各自以週期 T 重置相位、三角權重交替，剪切量上限 T/2 × Δω，紋理不會纏繞。
+    // (2) 雜訊的徑向頻率（原 r×14、r×36 → 週期 0.03 rs ≈ 1 px）低於取樣極限，本身就是摩爾紋；降到 r×1.6／4／9（最細週期 0.11 rs）。
+    float n = mix(diskNoise(phi + 2.1, r, mod(uTime + 0.5 * DISK_T, DISK_T)), diskNoise(phi, r, mod(uTime, DISK_T)), 1.0 - abs(2.0 * mod(uTime, DISK_T) / DISK_T - 1.0));
+    float emis = pow(max(1.0 - t, 0.0), 1.3) * (0.6 + 0.55 * n);
+    // 配色：內緣白熱、中段淡金、外緣暖橘（藝術化；實際盤溫度決定光譜，此處僅示意）；整體偏白，色彩由 Doppler 與色調映射帶出
+    vec3 hot = vec3(1.0, 0.98, 0.95), gold = vec3(1.0, 0.90, 0.72), warm = vec3(0.98, 0.68, 0.40);
     vec3 col = t < 0.45 ? mix(hot, gold, t / 0.45) : mix(gold, warm, (t - 0.45) / 0.55);
     // 都卜勒射束：盤面速度 β = sqrt(rs/(2 r))（圓軌道，rs=1 → β = sqrt(0.5/r)），觀察者方向為 -rayDir
     float beta = sqrt(0.5 / r);
@@ -453,8 +464,9 @@ export const BH_FRAG = /* glsl */`
     float boost = pow(max(g, 0.0), 2.5);                         // 亮度不對稱（接近側亮）
     col = mix(col, vec3(0.8, 0.88, 1.0), clamp((g - 1.0) * 0.8, 0.0, 0.25));
     col = mix(col, vec3(1.0, 0.45, 0.2), clamp((1.0 - g) * 0.8, 0.0, 0.3));
-    float alpha = clamp(emis * 1.5, 0.0, 1.0) * smoothstep(0.0, 0.05, t) * smoothstep(0.0, 0.25, 1.0 - t);
-    return vec4(col * emis * min(boost, 3.0) * 1.35, alpha);
+    float alpha = clamp(emis * 1.5, 0.0, 1.0) * smoothstep(0.0, 0.1, t) * smoothstep(0.0, 0.25, 1.0 - t); // 內緣淡入 0.05→0.1：光子環是內緣的高階像，邊緣越硬環越像鋸齒細線
+    // 發光量進高動態範圍（×3.2）：接近側的 Doppler 增亮會超過 1 進 Bloom，色調映射把它滾降成白熱；遠離側暗紅
+    return vec4(col * emis * min(boost, 3.0) * 1.3, alpha); // 1.3：接近側白熱但不整片過曝；事件視界的黑由 Bloom 強度（engine 0.4）保護
   }
   void main() {
     vec3 ro = uCamPos;
@@ -470,23 +482,37 @@ export const BH_FRAG = /* glsl */`
     float sinA = dot(rd, ephi);          // 橫向分量
     // 對於以 φ 為參數的軌道，r dφ/ds = sinA, dr/ds = cosA → dr/dφ = r cosA / sinA → u' = -cosA/(r sinA) * ...
     float du = -cosA / max(sinA, 1e-4) * u;
-    float phi = 0.0;
     vec3 col = vec3(0.0); float trans = 1.0;
     vec3 prevP = ro;
     bool captured = false;
     int STEPS = int(uSteps);
+    // 逃逸方向用軌道切線 dp/dφ = r'·(er cosφ + ephi sinφ) + r·(−er sinφ + ephi cosφ)，r' = −u'/u²（每步更新，取最後一個有效值）。
+    // 之前用「最後兩點差」且固定 0.05 的 φ 偏移，與實際步長不一致，遠處星點被沿徑向拉成細線（GPT 審查 PR #48 提到的拉絲）。
+    vec3 lastDir = rd;
+    bool escaped = false;
+    // cos φ／sin φ 用旋轉遞推（每步 φ += h，h ≤ 0.07 用小角近似，再正規化），不每步呼叫三角函數；逃逸方向只在迴圈外正規化一次
+    float cphi = 1.0, sphi = 0.0;
     for (int i = 0; i < 1200; i++) {
       if (i >= STEPS) break;
-      // 步長：遠處大步、近處小步
-      float h = clamp(0.04 / max(u * 1.5, 0.25), 0.008, 0.07);
-      // RK2 積分 u'' = -u + 1.5 u²
-      float k1u = du, k1du = -u + 1.5 * u * u;
-      float um = u + 0.5 * h * k1u, dum = du + 0.5 * h * k1du;
-      float k2u = dum, k2du = -um + 1.5 * um * um;
-      u += h * k2u; du += h * k2du; phi += h;
+      // 步長：遠處大步、近處小步；光子球（u≈2/3）附近的軌道不穩定，再縮到 0.6 倍，否則相鄰像素的光線命中／錯過盤面交替出現，
+      // 光子環在螢幕上變成點狀斷線（GPT 第四輪）。
+      float h = clamp(0.06 / max(u * 1.5, 0.25), 0.01, 0.1) * mix(0.6, 1.0, smoothstep(0.08, 0.3, abs(u - 0.6667)));   // RK4 容許比 RK2 大 1.5 倍的步長（遠處 0.1、光子球附近 0.036 rad），步數少三分之一
+      // RK4 積分 u'' = -u + 1.5 u²（右式極便宜，RK4 比 RK2 多的兩次求值幾乎免費，但在不穩定軌道附近誤差小得多）
+      float k1u = du,                 k1du = -u + 1.5 * u * u;
+      float u2 = u + 0.5 * h * k1u,   d2 = du + 0.5 * h * k1du;
+      float k2u = d2,                 k2du = -u2 + 1.5 * u2 * u2;
+      float u3 = u + 0.5 * h * k2u,   d3 = du + 0.5 * h * k2du;
+      float k3u = d3,                 k3du = -u3 + 1.5 * u3 * u3;
+      float u4 = u + h * k3u,         d4 = du + h * k3du;
+      float k4u = d4,                 k4du = -u4 + 1.5 * u4 * u4;
+      u += h * (k1u + 2.0 * k2u + 2.0 * k3u + k4u) / 6.0; du += h * (k1du + 2.0 * k2du + 2.0 * k3du + k4du) / 6.0;
+      { float ch = 1.0 - 0.5 * h * h, sh = h * (1.0 - h * h / 6.0); float c2 = cphi * ch - sphi * sh, s2 = sphi * ch + cphi * sh; float nrm = inversesqrt(c2 * c2 + s2 * s2); cphi = c2 * nrm; sphi = s2 * nrm; }
       if (u > 1.0) { captured = true; break; }         // 掉入事件視界
+      if (u <= 1e-6) { escaped = true; break; }         // 到達無窮遠：方向取上一步的切線
       float r = 1.0 / u;
-      vec3 p = (er * cos(phi) + ephi * sin(phi)) * r;
+      vec3 radial = er * cphi + ephi * sphi, tang = -er * sphi + ephi * cphi;
+      lastDir = (-du / (u * u)) * radial + r * tang;    // 軌道切線（未正規化）
+      vec3 p = radial * r;
       // 吸積盤：穿越盤面（法線方向符號改變）
       if (uDiskOn > 0.5) {
         float s0 = dot(prevP, uDiskNormal), s1 = dot(p, uDiskNormal);
@@ -500,14 +526,11 @@ export const BH_FRAG = /* glsl */`
         }
       }
       prevP = p;
-      if ((r > 80.0 || u < 0.0) && du < 0.0) break;   // 已遠離（或 u 穿越 0 = 到達無窮遠）且正在往外走
+      if ((r > 80.0 || u < 0.0) && du < 0.0) { escaped = true; break; }   // 已遠離（或 u 穿越 0 = 到達無窮遠）且正在往外走
     }
-    if (!captured && trans > 0.02) {
-      // 逃逸方向：以最後兩點的差決定
-      vec3 outDir = normalize(prevP - (er * cos(phi - 0.05) + ephi * sin(phi - 0.05)) / max(u, 1e-6));
-      // 若 u 很小 (遠離)，用解析方向近似：
-      col += skyColor(outDir) * trans;
-    }
+    // 步數用完仍未逃逸也未被捕獲 = 卡在光子球附近繞圈的光線；之前直接拿當下切線取樣星空，
+    // 在陰影邊緣形成一圈隨機星點（「細亮白、點狀斷線」）。這些光線實際上近乎一半落入視界，改視為被捕獲（只保留已累積的盤面光）。
+    if (!captured && escaped && trans > 0.02) col += skyColor(safeNormalize(lastDir)) * trans; // 逃逸方向：軌道切線（見上）
     gl_FragColor = vec4(safeColor(col), 1.0);
   }
 `;

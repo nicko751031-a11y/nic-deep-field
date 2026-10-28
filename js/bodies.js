@@ -76,7 +76,7 @@ export const BODIES = [
     radius: 71492, flattening: 0.06487, mass: 1.898e27, rotKey: 'jupiter', orbitKey: 'jupiter',
     rotationPeriodZh: '9 小時 55 分（System III）', orbitZh: '11.86 年，a = 5.203 AU',
     minAltitude: 1500, // 1 bar 層上方；氣態行星沒有可站立表面
-    textures: { kind: 'gas', src: 'observed', map: 'assets/textures/jupiter_nasa_720.jpg', color: [0.75, 0.65, 0.5],
+    textures: { kind: 'gas', src: 'observed', map: 'assets/textures/jupiter_nasa_720.jpg', color: [0.75, 0.65, 0.5], desat: 0.12,
       note: 'NASA/JPL 木星全球圖（Cassini ISS 影像拼接，720×360，經 NASA-3D-Resources 倉庫取得）。雲帶與大紅斑有觀測依據，但為拍攝當時（2000 年）的樣貌；大紅斑的當前經度未同步。解析度低，近距離會模糊。' },
     facts: { 雲頂溫度: '約 −110 °C', 大氣: 'H₂ 90%、He 10%', 衛星: '95 顆已確認', 大紅斑: '風暴，直徑約 1.6 萬 km（持續縮小中）' },
     H: -9.395,
@@ -86,7 +86,7 @@ export const BODIES = [
     radius: 60268, flattening: 0.09796, mass: 5.683e26, rotKey: 'saturn', orbitKey: 'saturn',
     rotationPeriodZh: '10 小時 33 分', orbitZh: '29.46 年，a = 9.537 AU',
     minAltitude: 1500,
-    textures: { kind: 'gas', src: 'observed', map: 'assets/textures/saturn_nasa_720.jpg', color: [0.85, 0.75, 0.55],
+    textures: { kind: 'gas', src: 'observed', map: 'assets/textures/saturn_nasa_720.jpg', color: [0.85, 0.75, 0.55], desat: 0.35, // 720 px 圖色彩過濃；實際為淡奶油色
       note: 'NASA/JPL 土星全球圖（720×360，經 NASA-3D-Resources 倉庫取得）。星環為「依已知環帶半徑程序重建」：C 環 74,658–92,000 km、B 環 92,000–117,580 km、卡西尼縫 117,580–122,170 km、A 環 122,170–136,775 km（恩克縫 133,589 km）、F 環 140,180 km；環內細節非影像。' },
     rings: { inner: 66900, outer: 140500, src: 'procedural' },
     facts: { 雲頂溫度: '約 −140 °C', 大氣: 'H₂ 96%、He 3%', 衛星: '146 顆已確認', 星環厚度: '多數不到 1 km' },
