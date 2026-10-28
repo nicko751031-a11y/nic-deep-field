@@ -482,7 +482,6 @@ export const BH_FRAG = /* glsl */`
     float sinA = dot(rd, ephi);          // 橫向分量
     // 對於以 φ 為參數的軌道，r dφ/ds = sinA, dr/ds = cosA → dr/dφ = r cosA / sinA → u' = -cosA/(r sinA) * ...
     float du = -cosA / max(sinA, 1e-4) * u;
-    float phi = 0.0;
     vec3 col = vec3(0.0); float trans = 1.0;
     vec3 prevP = ro;
     bool captured = false;
@@ -491,11 +490,13 @@ export const BH_FRAG = /* glsl */`
     // 之前用「最後兩點差」且固定 0.05 的 φ 偏移，與實際步長不一致，遠處星點被沿徑向拉成細線（GPT 審查 PR #48 提到的拉絲）。
     vec3 lastDir = rd;
     bool escaped = false;
+    // cos φ／sin φ 用旋轉遞推（每步 φ += h，h ≤ 0.07 用小角近似，再正規化），不每步呼叫三角函數；逃逸方向只在迴圈外正規化一次
+    float cphi = 1.0, sphi = 0.0;
     for (int i = 0; i < 1200; i++) {
       if (i >= STEPS) break;
       // 步長：遠處大步、近處小步；光子球（u≈2/3）附近的軌道不穩定，再縮到 0.6 倍，否則相鄰像素的光線命中／錯過盤面交替出現，
       // 光子環在螢幕上變成點狀斷線（GPT 第四輪）。
-      float h = clamp(0.04 / max(u * 1.5, 0.25), 0.008, 0.07) * mix(0.6, 1.0, smoothstep(0.08, 0.3, abs(u - 0.6667)));
+      float h = clamp(0.06 / max(u * 1.5, 0.25), 0.01, 0.1) * mix(0.6, 1.0, smoothstep(0.08, 0.3, abs(u - 0.6667)));   // RK4 容許比 RK2 大 1.5 倍的步長（遠處 0.1、光子球附近 0.036 rad），步數少三分之一
       // RK4 積分 u'' = -u + 1.5 u²（右式極便宜，RK4 比 RK2 多的兩次求值幾乎免費，但在不穩定軌道附近誤差小得多）
       float k1u = du,                 k1du = -u + 1.5 * u * u;
       float u2 = u + 0.5 * h * k1u,   d2 = du + 0.5 * h * k1du;
@@ -504,12 +505,13 @@ export const BH_FRAG = /* glsl */`
       float k3u = d3,                 k3du = -u3 + 1.5 * u3 * u3;
       float u4 = u + h * k3u,         d4 = du + h * k3du;
       float k4u = d4,                 k4du = -u4 + 1.5 * u4 * u4;
-      u += h * (k1u + 2.0 * k2u + 2.0 * k3u + k4u) / 6.0; du += h * (k1du + 2.0 * k2du + 2.0 * k3du + k4du) / 6.0; phi += h;
+      u += h * (k1u + 2.0 * k2u + 2.0 * k3u + k4u) / 6.0; du += h * (k1du + 2.0 * k2du + 2.0 * k3du + k4du) / 6.0;
+      { float ch = 1.0 - 0.5 * h * h, sh = h * (1.0 - h * h / 6.0); float c2 = cphi * ch - sphi * sh, s2 = sphi * ch + cphi * sh; float nrm = inversesqrt(c2 * c2 + s2 * s2); cphi = c2 * nrm; sphi = s2 * nrm; }
       if (u > 1.0) { captured = true; break; }         // 掉入事件視界
       if (u <= 1e-6) { escaped = true; break; }         // 到達無窮遠：方向取上一步的切線
       float r = 1.0 / u;
-      vec3 radial = er * cos(phi) + ephi * sin(phi), tang = -er * sin(phi) + ephi * cos(phi);
-      lastDir = safeNormalize((-du / (u * u)) * radial + r * tang);
+      vec3 radial = er * cphi + ephi * sphi, tang = -er * sphi + ephi * cphi;
+      lastDir = (-du / (u * u)) * radial + r * tang;    // 軌道切線（未正規化）
       vec3 p = radial * r;
       // 吸積盤：穿越盤面（法線方向符號改變）
       if (uDiskOn > 0.5) {
@@ -528,7 +530,7 @@ export const BH_FRAG = /* glsl */`
     }
     // 步數用完仍未逃逸也未被捕獲 = 卡在光子球附近繞圈的光線；之前直接拿當下切線取樣星空，
     // 在陰影邊緣形成一圈隨機星點（「細亮白、點狀斷線」）。這些光線實際上近乎一半落入視界，改視為被捕獲（只保留已累積的盤面光）。
-    if (!captured && escaped && trans > 0.02) col += skyColor(lastDir) * trans; // 逃逸方向：軌道切線（見上）
+    if (!captured && escaped && trans > 0.02) col += skyColor(safeNormalize(lastDir)) * trans; // 逃逸方向：軌道切線（見上）
     gl_FragColor = vec4(safeColor(col), 1.0);
   }
 `;
