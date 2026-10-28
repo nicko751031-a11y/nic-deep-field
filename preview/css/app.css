@@ -242,3 +242,11 @@ body:not(.idle) #hud:not(.hidden) ~ #wx-note { bottom:calc(210px + var(--sab)); 
   .search input { min-height: 44px; font-size: 16px; }
   .status { font-size: 11px; }
 }
+
+/* GPT 橫向手機頂列候選（AUDIT D1／D3）：761px 以上的手機橫向原本走桌面規則，♫ 蓋住目的地列。
+   限定觸控＋矮橫向視窗；保留「真實觀測」入口及 44px 音樂觸控範圍。需 Claude 完整 ARC／Safari QA。 */
+@media (min-width: 761px) and (max-width: 1050px) and (max-height: 500px) and (orientation: landscape) {
+  .touch .brand small { display: none; }
+  .touch .search { max-width: 38vw; }
+  .touch #btn-music { top: calc(10px + var(--sat)); right: calc(220px + var(--sar)); }
+}

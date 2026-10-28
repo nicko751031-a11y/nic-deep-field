@@ -368,3 +368,14 @@ node tools/browser_test.mjs http://127.0.0.1:8123/ test-output --mobile --landsc
 - 另兩個截圖看到、未列入守門的視覺問題（交 GPT）：橫向時 3D 天體標籤（太陽／金星距離）落在底部狀態列與按鈕上（標籤層不避讓 HUD）；載入後幾秒的觸控提示文字疊在狀態列上。
 - 既有回歸（`regress_wt.sh`，shader-check、單元、nan_sweep、wx_layer、audio_ui、settings_resume、search_aria、dest_scroll、lod_black_tile、realtime_clock、reload、boost、sky、look、report_button）在本分支的結果見 PR 留言。
 - **真機未測**：iPhone Safari／加入主畫面的 safe area、虛擬鍵盤、音訊政策、FPS／熱降頻、地球黑色扇形，等負責人以預覽網址實測並用「回報問題」送出 JSON。
+
+## 2026-10-28｜PR #52 橫向 ♫ 候選（GPT）QA：完整 ARC 直橫向前後對照
+
+- 候選：`chatgpt/arc-landscape-music-nav-20261028` `3f773cf`（只改 `app.css`：觸控＋761–1050 px 寬＋≤500 px 高＋橫向時 ♫ 移到首列 `top 10／right 220`、品牌副標隱藏、搜尋最大 38vw）併入整合分支 `claude/integration-test`（含 PR #47＋#48 `fc8ee8b`＋#50）。
+- `tools/mobile_layout_test.mjs` 第二版：尺寸加 812×375、956×440（共直向 4、橫向 4）；橫向另以 `:root` 的 `--sal`／`--sar` 覆寫 env() 模擬 59 px 左／右 safe-area 三種方向，並把目的地列捲到最後再查一次（♫ 不得蓋住最後一個按鈕）；載入後等觸控提示（6–13 秒）出現，量它與狀態列／資訊卡的矩形相交；橫向另量 `#labels .lbl` 與 `#hud .top`／`.bottom`／♫／觸控鈕的相交（兩者為診斷輸出，不當守門）；截圖前先喚醒（閒置淡出不影響幾何檢查，但截圖要看得到 HUD）。
+- 結果（iPhone UA、DPR 2、低畫質、SwiftShader）：**併入前**（`e231c72`）橫向 812／844／915／956 各 2 項失敗（♫ 蓋住目的地列右端 M42／比鄰星／TRAPPIST-1 e）；**併入後**全部通過：8 個尺寸 HUD 不重疊、不出框，橫向 × safe-area none／left59／right59 × 目的地列捲到最後皆不重疊（♫ x＝548／580／651／692，右側 59 px 時各左移 59），搜尋展開收合、♫ 啟停、資訊卡、H 隱藏恢復、閒置恢復、console 0。`audio_ui`／`dest_scroll`／`search_aria`／`reload`／shader-check 於併入後全部通過。
+- 前後截圖：`docs/screens/land-before-*.jpg`／`land-after-*.jpg`（844×390 等四個橫向尺寸 × none／left59／right59，目的地列已捲到最後；另 390×844 直向）。
+- 診斷（交 GPT 決定視覺策略，數值為 CSS px）：
+  - 觸控提示 `#toast`（`bottom: 110px`）直向 390×844 落在 (98,697) 195×37，與狀態列 (12,701) 366×55 相交（四個直向尺寸皆相交；320×700 還與資訊卡相交）；橫向 844×390 落在 (237,261) 371×19，資訊卡開啟時與資訊卡 (438,178) 388×138 相交、關閉時無相交。
+  - 天體標籤：橫向 844×390 有 6 個可見標籤，2 個落入底部 HUD 區（y 326–376）：水星 (151,353) 85×30、金星 (337,300) 84×30；812／915 相同兩個，956 只有水星。`ui.updateLabels()` 直接用投影座標定位，沒有對 HUD 區的避讓。
+- **真機未測**：iPhone Safari 的實際 safe-area、鍵盤、音訊、FPS。
